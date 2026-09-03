@@ -206,6 +206,11 @@ app.post("/api/auth/logout", userAuth, (req, res) => {
 
 app.get("/api/state", userAuth, (_req, res) => res.json(publicState()));
 
+function paramString(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
+
 app.post("/api/smart-home/refresh", userAuth, async (_req, res) => {
   await tuya.refresh();
   res.json(tuya.state());
@@ -213,7 +218,7 @@ app.post("/api/smart-home/refresh", userAuth, async (_req, res) => {
 app.post("/api/smart-home/devices/:id/command", userAuth, async (req, res) => {
   const parsed = z.object({ code: z.string().min(1).max(128), value: z.unknown(), confirm: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const device = tuya.state().devices.find((d) => d.id === req.params.id);
+  const device = tuya.state().devices.find((d) => d.id === paramString(req.params.id));
   if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
   const dangerous = /kapu|gate|garage|garázs|door|lock|zár/i.test(`${device.name} ${device.productName}`);
   if (dangerous && parsed.data.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
@@ -221,7 +226,7 @@ app.post("/api/smart-home/devices/:id/command", userAuth, async (req, res) => {
   catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
 });
 app.post("/api/smart-home/scenes/:id/run", userAuth, async (req, res) => {
-  const scene = tuya.state().scenes.find((x) => x.id === req.params.id);
+  const scene = tuya.state().scenes.find((x) => x.id === paramString(req.params.id));
   if (!scene) return res.status(404).json({ error: "tuya_scene_not_found" });
   const dangerous = /kapu|gate|garage|garázs|door|lock|zár/i.test(scene.name);
   if (dangerous && req.body?.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
@@ -264,7 +269,7 @@ app.post("/api/torrents/:id/copy", userAuth, (req, res) => {
   const current = store.get();
   const bridgeId = current.snapshot?.bridgeId;
   if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
-  const torrentId = Number(req.params.id);
+  const torrentId = Number(paramString(req.params.id));
   const destination = String(req.body?.destination || current.settings.autoCopyDestination).trim();
   if (!Number.isInteger(torrentId)) return res.status(400).json({ error: "invalid_torrent_id" });
   if (!destination || destination.includes("..") || destination.startsWith("/")) return res.status(400).json({ error: "invalid_destination" });
@@ -286,7 +291,7 @@ app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
   const current = store.get();
   const bridgeId = current.snapshot?.bridgeId;
   if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
-  const hash = req.params.hash;
+  const hash = paramString(req.params.hash);
   const copy = current.copies[hash];
   const torrent = current.snapshot?.kd20.torrents.find((t) => t.hashString === hash);
   if (!copy || !torrent) return res.status(404).json({ error: "copy_not_found" });
@@ -378,7 +383,7 @@ app.get("/api/bridge/commands", bridgeAuth, (req, res) => {
 });
 
 app.post("/api/bridge/commands/:id/progress", bridgeAuth, (req, res) => {
-  const id = req.params.id;
+  const id = paramString(req.params.id);
   const parsed = z.object({
     copiedBytes: z.number().nonnegative(),
     totalBytes: z.number().nonnegative(),
@@ -408,7 +413,7 @@ app.post("/api/bridge/commands/:id/progress", bridgeAuth, (req, res) => {
 });
 
 app.post("/api/bridge/commands/:id/complete", bridgeAuth, (req, res) => {
-  const id = req.params.id;
+  const id = paramString(req.params.id);
   const ok = Boolean(req.body?.ok);
   const message = String(req.body?.message || "").slice(0, 2000);
   store.mutate((s) => {

@@ -1,5 +1,5 @@
 
-## v0.8.1 Render build hotfix
+## v0.8.2 Render build hotfix
 
 - Javítva a TypeScript `TS18048` build hiba a Smart Life kártyánál.
 - A web kliens most biztonságos üres Smart Home állapotot használ addig is, amíg a `/api/state` még nem tartalmaz Tuya adatot.
@@ -101,3 +101,10 @@ Bridge:
 cd bridge
 make build
 ```
+
+
+## v0.8.2 Render build hotfix
+
+- Fixes Express 5 route parameter typing (`string | string[]`) in the server build.
+- Normalizes all route params before using them as IDs or Record keys.
+- No WD Bridge upgrade is required when moving from 0.8.0/0.8.1 server UI to this hotfix.
