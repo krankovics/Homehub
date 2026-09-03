@@ -27,7 +27,11 @@ function findStatus(d:TuyaDevice,patterns:string[]){return d.status.find(x=>patt
 function deviceKind(d:TuyaDevice){const s=`${d.name} ${d.productName} ${d.category}`.toLowerCase();if(/air conditioner|klíma|climate|aircon/.test(s))return"climate";if(/temperature|humidity|hőmér|thermo|sensor/.test(s))return"sensor";if(/gate|kapu|garage|garázs|lock/.test(s))return"gate";if(/light|bulb|lamp|lámpa|rgb|cct/.test(s))return"light";if(/plug|socket|switch|outlet|konnektor/.test(s))return"switch";return"device"}
 function metric(d:TuyaDevice,patterns:string[]){const p=findStatus(d,patterns);if(!p||typeof p.value!=="number")return null;const meta=specValues(d,p.code);const scale=Number(meta.scale||0);const v=p.value/Math.pow(10,scale);return{value:v,unit:String(meta.unit||""),scale}}
 function batteryPercent(d:TuyaDevice){const codes=["battery_percentage","battery_percent","battery_pct","battery_value"];const p=d.status.find(x=>codes.includes(x.code.toLowerCase())&&typeof x.value==="number");if(!p)return null;const meta=specValues(d,p.code);const scale=Number(meta.scale||0);let v=Number(p.value)/Math.pow(10,scale);const max=Number(meta.max||100);if(max>100&&v>100)v=v/max*100;if(v<0||v>100)return null;return Math.round(v)}
-function enumRange(d:TuyaDevice,code?:string){if(!code)return[] as string[];const m=specValues(d,code);return Array.isArray(m.range)?m.range.map(String):[]}
+function enumRange(d:TuyaDevice,code?:string):string[]{
+  if(!code)return[];
+  const m=specValues(d,code) as {range?:unknown};
+  return Array.isArray(m.range)?m.range.map((value:unknown)=>String(value)):[];
+}
 function labelKind(kind:string){return kind==="climate"?"Klíma":kind==="sensor"?"Szenzor":kind==="switch"?"Kapcsoló":kind==="light"?"Világítás":kind==="gate"?"Kapu":"Eszköz"}
 async function api(path:string,init?:RequestInit){const r=await fetch(path,init);if(r.status===401)throw new Error("AUTH_REQUIRED");const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b?.error||`HTTP ${r.status}`);return b}
 

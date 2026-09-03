@@ -1,4 +1,4 @@
-# HomeHub v0.9.1
+# HomeHub v0.9.2
 
 Otthoni vezérlőközpont a jelenlegi setuphoz:
 
@@ -10,9 +10,9 @@ Otthoni vezérlőközpont a jelenlegi setuphoz:
 - Smart Life / Tuya Central Europe
 - PWA / Render webfelület
 
-## v0.9.1 hotfix + v0.9 újdonságok
+## v0.9.2 hotfix + v0.9 újdonságok
 
-### v0.9.1 hotfix
+### v0.9.2 hotfix
 
 - Külön 20 másodperces bridge heartbeat fut a hosszú SMB másolásoktól, LAN probe-októl és parancsoktól függetlenül.
 - A Render külön `/api/bridge/heartbeat` végponton frissíti a jelenlétet, ezért egy hosszú másolás alatt sem szabad tévesen offline-ra váltania.
@@ -82,7 +82,7 @@ BRIDGE_STALE_MS=90000
 
 `TUYA_ACCESS_SECRET`-et ne tedd Gitbe.
 
-## WD Bridge frissítés v0.9.1-re
+## WD Bridge frissítés v0.9.2-re
 
 Windows PowerShell, a kicsomagolt `bridge` mappában:
 
@@ -106,7 +106,7 @@ chmod 755 /DataVolume/homehub/homehub-bridge
 Várt verzió:
 
 ```text
-homehub-bridge 0.9.1 linux/arm
+homehub-bridge 0.9.2 linux/arm
 ```
 
 A régi `config.json` használható. Ha `pollSeconds` még `3`, a v0.9 automatikusan 30 másodpercre migrálja futás közben. Új telepítésnél a példa config már 30-at tartalmaz.

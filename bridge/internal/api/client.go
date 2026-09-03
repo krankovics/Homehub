@@ -74,9 +74,9 @@ func (c *Client) do(method, path string, in, out any) error {
 }
 func (c *Client) Heartbeat(bridgeID, version string) error {
 	return c.do(http.MethodPost, "/api/bridge/heartbeat", map[string]any{
-		"bridgeId": bridgeID,
+		"bridgeId":  bridgeID,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"version": version,
+		"version":   version,
 	}, nil)
 }
 func (c *Client) Snapshot(s any) (SnapshotResponse, error) {
