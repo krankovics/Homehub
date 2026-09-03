@@ -6,10 +6,10 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { Command, Snapshot } from "./types.js";
+import type { Command, PersistentBackup, Snapshot } from "./types.js";
 import { TuyaService } from "./tuya.js";
 
-const VERSION = "0.8.1";
+const VERSION = "0.9.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -19,7 +19,7 @@ const DATA_FILE = process.env.DATA_FILE || "./data/state.json";
 const WEB_DIST = path.resolve(process.env.WEB_DIST || "../web/dist");
 const SESSION_COOKIE = "homehub_session";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
-const BRIDGE_STALE_MS = Number(process.env.BRIDGE_STALE_MS || 15_000);
+const BRIDGE_STALE_MS = Number(process.env.BRIDGE_STALE_MS || 90_000);
 const TUYA_ACCESS_ID = process.env.TUYA_ACCESS_ID || "";
 const TUYA_ACCESS_SECRET = process.env.TUYA_ACCESS_SECRET || "";
 const TUYA_API_ENDPOINT = process.env.TUYA_API_ENDPOINT || "https://openapi.tuyaeu.com";
@@ -39,7 +39,11 @@ const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 app.use(express.json({ limit: "24mb" }));
 app.use((req, res, next) => {
-  if (req.path.startsWith("/api/")) res.setHeader("Cache-Control", "no-store");
+  if (req.path.startsWith("/api/") || req.path === "/" || req.path === "/index.html" || req.path === "/sw.js" || req.path === "/manifest.webmanifest") {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
   next();
 });
 
@@ -156,6 +160,37 @@ function autoQueueCopies(snapshot: Snapshot) {
       };
     });
   }
+}
+
+function reconcileLocalCopies(snapshot: Snapshot) {
+  const local = snapshot.localCopies || {};
+  const torrents = snapshot.kd20.torrents;
+  const current = store.get();
+  const updates: Array<{ hash: string; rec: (typeof local)[string]; torrent: (typeof torrents)[number] }> = [];
+  for (const [hash, rec] of Object.entries(local)) {
+    const torrent = torrents.find((x) => x.hashString === hash);
+    if (!torrent || current.copies[hash]?.state === "done") continue;
+    updates.push({ hash, rec, torrent });
+  }
+  if (!updates.length) return;
+  store.mutate((s) => {
+    for (const { hash, rec, torrent: t } of updates) {
+      const existing = s.copies[hash];
+      s.copies[hash] = {
+        torrentHash: hash,
+        torrentId: t.id,
+        torrentName: rec.name || t.name,
+        destination: rec.destination || s.settings.autoCopyDestination,
+        commandId: existing?.commandId || `local-${hash.slice(0, 12)}`,
+        state: "done",
+        message: "A WD Bridge helyben már átmásolta",
+        attempts: existing?.attempts || 1,
+        percent: 1,
+        etaSeconds: 0,
+        updatedAt: rec.copiedAt || new Date().toISOString()
+      };
+    }
+  });
 }
 
 function publicState() {
@@ -287,6 +322,20 @@ app.post("/api/torrents/:id/copy", userAuth, (req, res) => {
   res.status(202).json(cmd);
 });
 
+app.delete("/api/torrents/:id", userAuth, (req, res) => {
+  const current = store.get();
+  const bridgeId = current.snapshot?.bridgeId;
+  if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
+  const torrentId = Number(paramString(req.params.id));
+  const parsed = z.object({ deleteData: z.boolean().default(false), confirm: z.boolean() }).safeParse(req.body || {});
+  if (!Number.isInteger(torrentId) || !parsed.success) return res.status(400).json({ error: "invalid_delete_request" });
+  if (parsed.data.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
+  const torrent = current.snapshot?.kd20.torrents.find((t) => t.id === torrentId);
+  if (!torrent) return res.status(404).json({ error: "torrent_not_found" });
+  const cmd = enqueue(bridgeId, "torrent.remove", { torrentId, deleteData: parsed.data.deleteData });
+  res.status(202).json({ ...cmd, wdCopyUntouched: true });
+});
+
 app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
   const current = store.get();
   const bridgeId = current.snapshot?.bridgeId;
@@ -308,6 +357,30 @@ app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
     }
   });
   res.status(202).json(cmd);
+});
+
+const persistentBackupSchema = z.object({
+  version: z.literal(1),
+  persistentUpdatedAt: z.string(),
+  settings: z.object({ autoCopyEnabled: z.boolean(), autoCopyDestination: z.string() }),
+  copies: z.record(z.any()),
+  commands: z.array(z.object({
+    id: z.string(), bridgeId: z.string(), type: z.enum(["torrent.addMagnet", "torrent.addFile", "torrent.copyToWd", "torrent.remove"]),
+    payload: z.record(z.any()), createdAt: z.string(), leasedAt: z.string().optional(), completedAt: z.string().optional(), ok: z.boolean().optional(), message: z.string().optional()
+  }))
+});
+
+app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
+  const parsed = z.object({
+    bridgeId: z.string().min(1),
+    timestamp: z.string().optional(),
+    version: z.string().optional()
+  }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  store.mutate((s) => {
+    s.bridgeLastSeenAt = new Date().toISOString();
+  }, false);
+  res.json({ ok: true, serverTime: new Date().toISOString() });
 });
 
 app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
@@ -345,18 +418,22 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
       note: z.string()
     }).optional(),
     network: z.array(z.object({
-      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), ip: z.string(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string()
-    })).optional()
+      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string()
+    })).optional(),
+    persistentState: persistentBackupSchema.optional(),
+    localCopies: z.record(z.object({ hash: z.string(), name: z.string(), destination: z.string(), copiedAt: z.string() })).optional()
   }).safeParse(req.body);
 
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const snapshot = parsed.data as Snapshot;
+  if (snapshot.persistentState) store.importPersistent(snapshot.persistentState as PersistentBackup);
   store.mutate((s) => {
-    s.snapshot = snapshot;
+    s.snapshot = { ...snapshot, persistentState: undefined, localCopies: undefined };
     s.bridgeLastSeenAt = new Date().toISOString();
-  });
+  }, false);
+  reconcileLocalCopies(snapshot);
   autoQueueCopies(snapshot);
-  res.json({ ok: true, settings: store.get().settings });
+  res.json({ ok: true, settings: store.get().settings, persistentState: store.exportPersistent() });
 });
 
 app.get("/api/bridge/commands", bridgeAuth, (req, res) => {
@@ -436,12 +513,28 @@ app.post("/api/bridge/commands/:id/complete", bridgeAuth, (req, res) => {
       copy.updatedAt = new Date().toISOString();
     }
   });
-  res.json({ ok: true });
+  res.json({ ok: true, settings: store.get().settings, persistentState: store.exportPersistent() });
 });
 
 if (fs.existsSync(WEB_DIST)) {
-  app.use(express.static(WEB_DIST, { maxAge: isProd ? "1h" : 0 }));
-  app.use((_req, res) => res.sendFile(path.join(WEB_DIST, "index.html")));
+  app.use(express.static(WEB_DIST, {
+    maxAge: isProd ? "1h" : 0,
+    immutable: false,
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("/sw.js") || filePath.endsWith("\\sw.js") || filePath.endsWith("/manifest.webmanifest") || filePath.endsWith("\\manifest.webmanifest")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    }
+  }));
+  app.use((_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(path.join(WEB_DIST, "index.html"));
+  });
 }
 
 if (tuya.state().configured) {

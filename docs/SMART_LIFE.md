@@ -1,30 +1,39 @@
-# Smart Life / Tuya integráció
+# Smart Life / Tuya v0.9
 
-A HomeHub v0.8 a Tuya Cloud API-t használja. A Smart Life-fiókot a Tuya Developer Platformon a Cloud Projecthez kell linkelni.
+A HomeHub a Tuya Central Europe Cloud API-t használja.
 
-## Render environment változók
+Render environment:
 
-- `TUYA_ACCESS_ID`: a Cloud Project Access ID / Client ID
-- `TUYA_ACCESS_SECRET`: a Cloud Project Access Secret / Client Secret
-- `TUYA_API_ENDPOINT`: Central Europe esetén `https://openapi.tuyaeu.com`
-- `TUYA_REFRESH_MS`: alapértelmezetten `15000`
+```text
+TUYA_ACCESS_ID=...
+TUYA_ACCESS_SECRET=...
+TUYA_API_ENDPOINT=https://openapi.tuyaeu.com
+TUYA_REFRESH_MS=15000
+```
 
-A Client Secretet ne tedd Gitbe és ne írd a Bridge configba. Csak Render secretként add meg.
+A secret ne kerüljön Gitbe vagy a WD Bridge configjába.
 
-## Mit tud a v0.8?
+## Eszközök
 
-- A Smart Life-fiókhoz kapcsolt eszközök automatikus lekérése, lapozással.
-- Online/offline állapot és a Tuya DP status mezők megjelenítése.
-- Hőmérséklet/páratartalom szenzorok automatikus felismerése.
-- Smart Plug / Smart Socket / kapcsolók ki-be vezérlése.
-- Klíma ki-be, célhőmérséklet és mód vezérlése, ha az eszköz ezeket a standard Tuya DP-ket publikálja.
-- Smart Life jelenetek lekérése és kézi indítása, ha a projekthez engedélyezett a Scene/Voice API.
-- Kapu, zár, garage/gate nevű eszköz vagy jelenet csak külön megerősítéssel futtatható.
+A kártyák a Tuya által publikált státusz- és function-specifikációból épülnek fel. A v0.9 külön kezeli:
 
-## API jogosultság
+- hőmérséklet/páratartalom szenzor
+- kapcsoló / konnektor
+- világítás
+- klíma
+- kapu/zár jellegű eszköz
+- ismeretlen/generikus eszköz
 
-Ha a HomeHub `Tuya 1106: Invalid permission` hibát jelez, a Tuya Cloud Project `Authorization` / `Service API` részén engedélyezni kell a projekt számára az IoT Core / Smart Home Device Management és a használt Smart Home Device Control API-kat. Jelenetekhez a scene/voice API jogosultság is szükséges lehet.
+Szenzorra nem kerül vezérlőmező. Klímánál csak a ténylegesen publikált célhőmérséklet, mód és ventilátorvezérlés jelenik meg.
 
-## Biztonság
+## Jelenetek
 
-A HomeHub nem küldi a Tuya Access Secretet a WD My Cloud Bridge-re. A Tuya API-hívások kizárólag a Renderen futó szerverről mennek.
+A HomeHub először a Smart Home Scene API-t használja:
+
+- `GET /v1.1/homes/{home_id}/scenes`
+- fallback: `GET /v1.0/homes/{home_id}/scenes`
+- futtatás: `POST /v1.0/homes/{home_id}/scenes/{scene_id}/trigger`
+
+Ha a device-listában nincs `home_id`, a tokenhez tartozó `uid` alapján lekéri a home-listát. Végső fallbackként megmarad a korábbi voice scene API.
+
+Kapu, garázs, ajtó, lock/zár nevű jelenetek és eszközök kézi megerősítést kérnek.

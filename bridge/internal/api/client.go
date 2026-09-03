@@ -16,21 +16,30 @@ type Client struct {
 	Base, Token string
 	http        *http.Client
 }
+
 type Command struct {
 	ID      string         `json:"id"`
 	Type    string         `json:"type"`
 	Payload map[string]any `json:"payload"`
 }
 
+type Settings struct {
+	AutoCopyEnabled     bool   `json:"autoCopyEnabled"`
+	AutoCopyDestination string `json:"autoCopyDestination"`
+}
+
+type SnapshotResponse struct {
+	OK              bool            `json:"ok"`
+	Settings        Settings        `json:"settings"`
+	PersistentState json.RawMessage `json:"persistentState,omitempty"`
+}
+
 func New(base, token string, insecureTLS bool) *Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if insecureTLS {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // explicitly opt-in only for legacy test environments
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
-	return &Client{
-		Base: strings.TrimRight(base, "/"), Token: token,
-		http: &http.Client{Timeout: 30 * time.Second, Transport: transport},
-	}
+	return &Client{Base: strings.TrimRight(base, "/"), Token: token, http: &http.Client{Timeout: 30 * time.Second, Transport: transport}}
 }
 func (c *Client) do(method, path string, in, out any) error {
 	var body *bytes.Reader
@@ -43,8 +52,7 @@ func (c *Client) do(method, path string, in, out any) error {
 	} else {
 		body = bytes.NewReader(nil)
 	}
-	u := c.Base + path
-	req, err := http.NewRequest(method, u, body)
+	req, err := http.NewRequest(method, c.Base+path, body)
 	if err != nil {
 		return err
 	}
@@ -64,16 +72,28 @@ func (c *Client) do(method, path string, in, out any) error {
 	}
 	return nil
 }
-func (c *Client) Snapshot(s any) error { return c.do(http.MethodPost, "/api/bridge/snapshot", s, nil) }
+func (c *Client) Heartbeat(bridgeID, version string) error {
+	return c.do(http.MethodPost, "/api/bridge/heartbeat", map[string]any{
+		"bridgeId": bridgeID,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version": version,
+	}, nil)
+}
+func (c *Client) Snapshot(s any) (SnapshotResponse, error) {
+	var out SnapshotResponse
+	err := c.do(http.MethodPost, "/api/bridge/snapshot", s, &out)
+	return out, err
+}
 func (c *Client) Commands(bridgeID string) ([]Command, error) {
 	var x []Command
 	err := c.do(http.MethodGet, "/api/bridge/commands?bridgeId="+url.QueryEscape(bridgeID), nil, &x)
 	return x, err
 }
-
 func (c *Client) Progress(id string, p any) error {
 	return c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/progress", p, nil)
 }
-func (c *Client) Complete(id string, ok bool, msg string) error {
-	return c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/complete", map[string]any{"ok": ok, "message": msg}, nil)
+func (c *Client) Complete(id string, ok bool, msg string) (SnapshotResponse, error) {
+	var out SnapshotResponse
+	err := c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/complete", map[string]any{"ok": ok, "message": msg}, &out)
+	return out, err
 }

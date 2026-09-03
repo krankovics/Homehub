@@ -1,92 +1,136 @@
+# HomeHub v0.9.1
 
-## v0.8.2 Render build hotfix
+Otthoni vezérlőközpont a jelenlegi setuphoz:
 
-- Javítva a TypeScript `TS18048` build hiba a Smart Life kártyánál.
-- A web kliens most biztonságos üres Smart Home állapotot használ addig is, amíg a `/api/state` még nem tartalmaz Tuya adatot.
-- A WD-n futó Bridge-et nem kell frissíteni: a 0.8.0 bridge kompatibilis ezzel a web/server hotfixszel.
+- Shuttle OMNINAS KD20 + Transmission
+- WD My Cloud OS 3 / ARMv7 Bridge
+- KD20 → WD automatikus másolás, progresszel
+- KD20 USB Print Server állapot
+- Technicolor FGA2233, Archer C6, RE220, 2× RE315
+- Smart Life / Tuya Central Europe
+- PWA / Render webfelület
 
-# HomeHub MVP v0.8
+## v0.9.1 hotfix + v0.9 újdonságok
 
-PWA + Render API + WD My Cloud ARMv7 Bridge a jelenlegi otthoni setuphoz: Shuttle OMNINAS KD20, WD My Cloud, USB nyomtató, Technicolor/TP-Link hálózat és Smart Life/Tuya.
+### v0.9.1 hotfix
 
-## v0.8 újdonságok
+- Külön 20 másodperces bridge heartbeat fut a hosszú SMB másolásoktól, LAN probe-októl és parancsoktól függetlenül.
+- A Render külön `/api/bridge/heartbeat` végponton frissíti a jelenlétet, ezért egy hosszú másolás alatt sem szabad tévesen offline-ra váltania.
+- A PWA cache verzió frissült; a service worker `updateViaCache: "none"` módban frissül, az app shell és a `sw.js` no-cache fejlécet kap.
+- Offline állapotnál a fejléc kiírja az utolsó Bridge kapcsolat óta eltelt időt.
 
-- **Smart Life / Tuya Cloud adapter** a Render szerveren.
-- A kapcsolt Smart Life-fiók összes eszközét dinamikusan lekéri, nem kell Device ID-ket kézzel felvenni.
-- Szenzorok: hőmérséklet, páratartalom és elérhető akkumulátoradatok.
-- Smart Plug / Socket / kapcsolók: ki-be vezérlés.
-- Klíma: ki-be, célhőmérséklet és mód, ha az adott Tuya eszköz publikálja ezeket a DP-ket.
-- Smart Life jelenetek megjelenítése és indítása, ha a projekt API-jogosultsága engedi.
-- Kapu/zár/garage/gate jellegű vezérlésekhez kötelező kézi megerősítés; automatikus kapunyitás nincs.
-- **Hálózat modul** a WD Bridge-ben: Technicolor FGA2233, Archer C6, RE220 és 2× RE315 online/offline, IP, MAC, válaszidő és admin shortcut.
-- MAC alapján ismert extenderek IP-címének ARP-alapú felderítése.
-- Megmarad minden v0.7 funkció: torrentek, magnet + `.torrent`, automatikus KD20 → WD másolás progresszel, USB Print Server monitorozás.
 
-## Valós környezet
+### Torrent
 
-- KD20: `192.168.1.12`
-- WD My Cloud: `192.168.1.180`, OS3 `04.06.00-111`, ARMv7
-- Technicolor FGA2233: `192.168.1.1`
-- Archer C6: `192.168.1.129`
-- RE220 + 2× RE315: MAC alapján felderítve
-- Tuya: Central Europe Data Center
+- manuális **Törlés** minden torrentnél
+- két külön, megerősítést igénylő művelet:
+  - csak a torrent eltávolítása a Transmissionből, a KD20 fájlok megtartásával
+  - torrent + KD20 helyi fájlok törlése
+- a WD My Cloudra már átmásolt példányt egyik törlés sem érinti
+- seedelési állapot megjelenítése
 
-## Render: új environment változók
+### Render / tartósság
 
-A meglévő `APP_PASSWORD`, `BRIDGE_TOKEN`, `COOKIE_SECRET` marad.
+- Bridge felhős polling alapérték: **30 mp**
+- Render bridge-stale ablak: **90 mp**
+- a HomeHub tartós állapotának WD-s backupja:
+  - `/DataVolume/homehub/server-state.json`
+- a Bridge minden sikeres szinkron után elmenti a szerver beállításait, másolási állapotait és parancsállapotát
+- Render restart/deploy után a WD visszatölti a tartós állapotot
+- Render kiesése alatt a már ismert automatikus KD20 → WD másolási beállítás helyben tovább működik
+- az AutoCopy saját állapota továbbra is:
+  - `/DataVolume/homehub/autocopy-state.json`
 
-Add hozzá:
+### Hálózat
+
+- az online állapot már nem kizárólag a webadmin TCP portjától függ
+- ping + ARP + TCP admin-port ellenőrzés
+- külön `online` és `adminOnline` állapot
+- az Archer C6 akkor is online-ként jelenhet meg, ha a webadmin nem válaszol
+- RE220 / RE315 MAC → IP felderítéshez sűrűbb ARP warm-up
+
+### Smart Life
+
+- szenzorokon nincs több értelmetlen hőmérséklet-beállító mező
+- szigorúbb akkumulátor százalék felismerés
+- külön szenzor, kapcsoló, világítás, klíma, kapu és általános eszköz kártya
+- klímánál dinamikus:
+  - be/ki
+  - célhőmérséklet
+  - üzemmód
+  - ventilátorfokozat, ha a Tuya specifikáció publikálja
+- Tap-to-Run jelenetek lekérése a Smart Home `home` scene API-val, voice API fallbackkel
+- kapu/zár jellegű műveletek továbbra is kézi megerősítést kérnek
+
+### Mobil / PWA
+
+- kisebb kijelzőn újratördelt Smart Life és torrent vezérlők
+- törlési műveletek külön biztonsági modalban
+
+## Render environment
 
 ```text
-TUYA_ACCESS_ID=<Tuya Access ID / Client ID>
-TUYA_ACCESS_SECRET=<Tuya Access Secret / Client Secret>
+APP_PASSWORD=...
+BRIDGE_TOKEN=...
+COOKIE_SECRET=...
+TUYA_ACCESS_ID=...
+TUYA_ACCESS_SECRET=...
 TUYA_API_ENDPOINT=https://openapi.tuyaeu.com
 TUYA_REFRESH_MS=15000
+BRIDGE_STALE_MS=90000
 ```
 
-A `TUYA_ACCESS_SECRET` kizárólag Render secret legyen. Ne kerüljön Gitbe és ne kerüljön a WD-re.
+`TUYA_ACCESS_SECRET`-et ne tedd Gitbe.
 
-Részletesen: `docs/SMART_LIFE.md`.
+## WD Bridge frissítés v0.9.1-re
 
-## WD Bridge hálózati config
-
-A `bridge/config.wdmycloud.example.json` tartalmazza a jelenlegi router/extender listát. A már telepített `/DataVolume/homehub/config.json` fájlt nem kell módosítani: ha nincs benne `network` blokk, a v0.8 Bridge automatikusan betölti a jelenlegi Technicolor/Archer/RE220/RE315 alaplistát. Később természetesen felülírható saját konfigurációval.
-
-Részletesen: `docs/NETWORK.md`.
-
-## Bridge frissítés
-
-Windowsból töltsd fel:
+Windows PowerShell, a kicsomagolt `bridge` mappában:
 
 ```powershell
-scp -O -o HostKeyAlgorithms=+ssh-rsa .\bridge\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v08
+scp -O -o HostKeyAlgorithms=+ssh-rsa .\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v09
+ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.1.180
 ```
 
-WD-n:
+WD My Cloud SSH-ban:
 
 ```sh
 /etc/init.d/homehub-bridge stop
 rm -f /DataVolume/homehub/homehub-bridge
-cp /DataVolume/homehub-bridge-v08 /DataVolume/homehub/homehub-bridge
+cp /DataVolume/homehub-bridge-v09 /DataVolume/homehub/homehub-bridge
 chmod 755 /DataVolume/homehub/homehub-bridge
 /DataVolume/homehub/homehub-bridge -version
 /etc/init.d/homehub-bridge start
 /etc/init.d/homehub-bridge status
 ```
 
-Elvárt verzió:
+Várt verzió:
 
 ```text
-homehub-bridge 0.8.0 linux/arm
+homehub-bridge 0.9.1 linux/arm
 ```
 
-## Tuya API
+A régi `config.json` használható. Ha `pollSeconds` még `3`, a v0.9 automatikusan 30 másodpercre migrálja futás közben. Új telepítésnél a példa config már 30-at tartalmaz.
 
-A HomeHub a Tuya Cloud HMAC-SHA256 hitelesítését használja, tokent kér, majd a kapcsolt App user device listát olvassa. A device control a standard Tuya command API-n történik. A kliens a modern Cloud signature algoritmust használja, és kompatibilitási fallbacket tartalmaz a régebbi signature módszerhez.
+## Tartós állapot ellenőrzése
 
-Ha `1106 Invalid permission` hiba jelenik meg, ellenőrizd a Tuya projekt `Authorization / Service API` részét.
+Az első sikeres v0.9 szerver + Bridge szinkron után:
+
+```sh
+ls -lh /DataVolume/homehub/server-state.json
+cat /DataVolume/homehub/server-state.json
+```
+
+A fájlban nem tárolunk Smart Life secretet vagy HomeHub belépési jelszót. A Bridge token a meglévő `config.json`-ban marad, 600-as jogosultsággal ajánlott.
 
 ## Build
+
+Bridge:
+
+```sh
+cd bridge
+go test ./...
+GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/homehub-bridge-linux-armv7 ./cmd/homehub-bridge
+```
 
 Web/server:
 
@@ -94,17 +138,3 @@ Web/server:
 npm install
 npm run build
 ```
-
-Bridge:
-
-```sh
-cd bridge
-make build
-```
-
-
-## v0.8.2 Render build hotfix
-
-- Fixes Express 5 route parameter typing (`string | string[]`) in the server build.
-- Normalizes all route params before using them as IDs or Record keys.
-- No WD Bridge upgrade is required when moving from 0.8.0/0.8.1 server UI to this hotfix.

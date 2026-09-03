@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"homehub/bridge/internal/api"
+	"homehub/bridge/internal/cloudstate"
 	"homehub/bridge/internal/config"
 	"homehub/bridge/internal/copyjob"
 	"homehub/bridge/internal/network"
@@ -17,7 +19,7 @@ import (
 	"homehub/bridge/internal/transmission"
 )
 
-const version = "0.8.0"
+const version = "0.9.1"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
@@ -33,8 +35,10 @@ type snapshot struct {
 		TotalBytes uint64 `json:"totalBytes"`
 		MediaRoot  string `json:"mediaRoot"`
 	} `json:"wd"`
-	Printer printer.Status   `json:"printer"`
-	Network []network.Status `json:"network,omitempty"`
+	Printer         printer.Status                `json:"printer"`
+	Network         []network.Status              `json:"network,omitempty"`
+	PersistentState json.RawMessage               `json:"persistentState,omitempty"`
+	LocalCopies     map[string]copyjob.CopyRecord `json:"localCopies,omitempty"`
 }
 
 func fsStats(path string) (free, total uint64, ok bool) {
@@ -104,6 +108,21 @@ func main() {
 
 	cloud := api.New(cfg.ServerURL, cfg.Token, cfg.ServerTLSInsecure)
 	log.Printf("HomeHub bridge %s (%s) starting", cfg.BridgeID, version)
+
+	// Presence reporting must not be blocked by slow LAN probes, SMB copies,
+	// or command execution.
+	go func() {
+		const heartbeatEvery = 20 * time.Second
+		ticker := time.NewTicker(heartbeatEvery)
+		defer ticker.Stop()
+		for {
+			if err := cloud.Heartbeat(cfg.BridgeID, version); err != nil {
+				log.Printf("heartbeat: %v", err)
+			}
+			<-ticker.C
+		}
+	}()
+
 	for {
 		runOnce(cfg, tr, cloud)
 		if *once {
@@ -201,8 +220,16 @@ func runAutoCopy(cfg config.Config, tr *transmission.Client) {
 }
 
 func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
-	if cfg.AutoCopy.Enabled {
-		runAutoCopy(cfg, tr)
+	localState := cloudstate.Load(cfg.CloudStateFile)
+	effective := cfg
+	if localState.Settings != nil {
+		effective.AutoCopy.Enabled = localState.Settings.AutoCopyEnabled
+		if localState.Settings.AutoCopyDestination != "" {
+			effective.AutoCopy.Destination = localState.Settings.AutoCopyDestination
+		}
+	}
+	if effective.AutoCopy.Enabled {
+		runAutoCopy(effective, tr)
 	}
 	ts, terr := tr.List()
 	var s snapshot
@@ -219,8 +246,21 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 	s.WD.FreeBytes, s.WD.TotalBytes, s.WD.Online = fsStats(cfg.WD.MediaRoot)
 	s.Printer = printer.Probe(cfg)
 	s.Network = network.Probe(cfg)
-	if err := cloud.Snapshot(s); err != nil {
+	s.PersistentState = localState.PersistentState
+	if copyState, err := copyjob.LoadState(effective.AutoCopy.StateFile); err == nil {
+		s.LocalCopies = copyState.Copied
+	}
+	resp, err := cloud.Snapshot(s)
+	if err != nil {
 		log.Printf("snapshot: %v", err)
+	} else {
+		state := cloudstate.File{
+			Settings:        &cloudstate.Settings{AutoCopyEnabled: resp.Settings.AutoCopyEnabled, AutoCopyDestination: resp.Settings.AutoCopyDestination},
+			PersistentState: resp.PersistentState,
+		}
+		if err := cloudstate.Save(cfg.CloudStateFile, state); err != nil {
+			log.Printf("cloud state save: %v", err)
+		}
 	}
 	cmds, err := cloud.Commands(cfg.BridgeID)
 	if err != nil {
@@ -229,7 +269,7 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 	}
 	for _, cmd := range cmds {
 		log.Printf("COMMAND START id=%s type=%s", cmd.ID, cmd.Type)
-		msg, ok := handle(cfg, tr, cmd, func(p copyjob.Progress) {
+		msg, ok := handle(effective, tr, cmd, func(p copyjob.Progress) {
 			if err := cloud.Progress(cmd.ID, p); err != nil {
 				log.Printf("progress id=%s: %v", cmd.ID, err)
 			}
@@ -239,8 +279,14 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 		} else {
 			log.Printf("COMMAND ERROR id=%s type=%s: %s", cmd.ID, cmd.Type, msg)
 		}
-		if err := cloud.Complete(cmd.ID, ok, msg); err != nil {
+		completeResp, err := cloud.Complete(cmd.ID, ok, msg)
+		if err != nil {
 			log.Printf("complete: %v", err)
+		} else {
+			state := cloudstate.File{Settings: &cloudstate.Settings{AutoCopyEnabled: completeResp.Settings.AutoCopyEnabled, AutoCopyDestination: completeResp.Settings.AutoCopyDestination}, PersistentState: completeResp.PersistentState}
+			if err := cloudstate.Save(cfg.CloudStateFile, state); err != nil {
+				log.Printf("cloud state save after command: %v", err)
+			}
 		}
 	}
 }
@@ -259,6 +305,19 @@ func handle(cfg config.Config, tr *transmission.Client, cmd api.Command, progres
 			return err.Error(), false
 		}
 		return "torrent file added", true
+	case "torrent.remove":
+		idFloat, ok := cmd.Payload["torrentId"].(float64)
+		if !ok {
+			return "missing torrentId", false
+		}
+		deleteData, _ := cmd.Payload["deleteData"].(bool)
+		if err := tr.Remove(int(idFloat), deleteData); err != nil {
+			return err.Error(), false
+		}
+		if deleteData {
+			return "torrent and KD20 local data removed", true
+		}
+		return "torrent removed; KD20 local data kept", true
 	case "torrent.copyToWd":
 		idFloat, ok := cmd.Payload["torrentId"].(float64)
 		if !ok {

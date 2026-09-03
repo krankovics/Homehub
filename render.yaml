@@ -15,7 +15,7 @@ services:
       - key: DATA_FILE
         value: /tmp/homehub/state.json
       - key: BRIDGE_STALE_MS
-        value: "15000"
+        value: "90000"
       - key: TUYA_ACCESS_ID
         sync: false
       - key: TUYA_ACCESS_SECRET

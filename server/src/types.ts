@@ -21,7 +21,16 @@ export type PrinterStatus = {
 };
 
 export type NetworkStatus = {
-  id: string; name: string; kind: string; online: boolean; ip: string; mac: string; latencyMs: number; adminUrl: string; note: string;
+  id: string;
+  name: string;
+  kind: string;
+  online: boolean;
+  adminOnline?: boolean;
+  ip: string;
+  mac: string;
+  latencyMs: number;
+  adminUrl: string;
+  note: string;
 };
 
 export type Snapshot = {
@@ -40,12 +49,15 @@ export type Snapshot = {
   };
   printer?: PrinterStatus;
   network?: NetworkStatus[];
+  persistentState?: PersistentBackup;
+  localCopies?: Record<string, { hash: string; name: string; destination: string; copiedAt: string }>;
 };
 
 export type CommandType =
   | "torrent.addMagnet"
   | "torrent.addFile"
-  | "torrent.copyToWd";
+  | "torrent.copyToWd"
+  | "torrent.remove";
 
 export type Command = {
   id: string;
@@ -84,10 +96,19 @@ export type CopyRecord = {
   updatedAt: string;
 };
 
+export type PersistentBackup = {
+  version: 1;
+  persistentUpdatedAt: string;
+  settings: Settings;
+  copies: Record<string, CopyRecord>;
+  commands: Command[];
+};
+
 export type State = {
   snapshot: Snapshot | null;
   bridgeLastSeenAt: string | null;
   commands: Command[];
   settings: Settings;
   copies: Record<string, CopyRecord>;
+  persistentUpdatedAt: string | null;
 };

@@ -13,6 +13,7 @@ type Config struct {
 	Token             string `json:"token"`
 	ServerTLSInsecure bool   `json:"serverTlsInsecure"`
 	PollSeconds       int    `json:"pollSeconds"`
+	CloudStateFile    string `json:"cloudStateFile"`
 	KD20              struct {
 		RPCURL      string `json:"rpcUrl"`
 		Username    string `json:"username"`
@@ -71,8 +72,11 @@ func Load(path string, requireCloud bool) (Config, error) {
 	if requireCloud && (strings.TrimSpace(c.BridgeID) == "" || strings.TrimSpace(c.ServerURL) == "" || strings.TrimSpace(c.Token) == "") {
 		return c, fmt.Errorf("bridgeId, serverUrl and token are required")
 	}
-	if c.PollSeconds <= 0 {
-		c.PollSeconds = 3
+	if c.PollSeconds <= 3 {
+		c.PollSeconds = 30
+	}
+	if strings.TrimSpace(c.CloudStateFile) == "" {
+		c.CloudStateFile = "/DataVolume/homehub/server-state.json"
 	}
 	if c.KD20.SMBMount == "" {
 		c.KD20.SMBMount = "/tmp/homehub-kd20"

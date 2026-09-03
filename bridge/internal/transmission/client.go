@@ -130,3 +130,7 @@ func (c *Client) AddMetainfo(b64 string) error {
 	}
 	return c.call("torrent-add", map[string]any{"metainfo": b64}, nil)
 }
+
+func (c *Client) Remove(id int, deleteLocalData bool) error {
+	return c.call("torrent-remove", map[string]any{"ids": []int{id}, "delete-local-data": deleteLocalData}, nil)
+}

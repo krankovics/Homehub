@@ -3,7 +3,7 @@
   "serverUrl": "https://YOUR-HOMEHUB.onrender.com",
   "token": "CHANGE-ME-SAME-AS-BRIDGE_TOKEN",
   "serverTlsInsecure": false,
-  "pollSeconds": 3,
+  "pollSeconds": 30,
   "kd20": {
     "rpcUrl": "http://192.168.1.12:9091/transmission/rpc",
     "username": "",
@@ -104,5 +104,6 @@
         ]
       }
     ]
-  }
+  },
+  "cloudStateFile": "/DataVolume/homehub/server-state.json"
 }
