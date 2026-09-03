@@ -10,6 +10,7 @@ export type TuyaDevice = {
   productName: string;
   productId?: string;
   homeId?: string;
+  profile?: "mygate" | "feyree" | "aircon";
   status: TuyaStatusPoint[];
   functions: TuyaSpecPoint[];
   statusSpec: TuyaSpecPoint[];
@@ -32,6 +33,26 @@ export type TuyaState = {
 
 type Token = { access_token: string; expire_time?: number; expire?: number; uid?: string };
 type ApiResponse<T> = { success: boolean; result?: T; code?: number; msg?: string; t?: number };
+
+
+function inferProfile(name: string, productName: string, category: string): TuyaDevice["profile"] {
+  const s = `${name} ${productName} ${category}`.toLowerCase();
+  if (/mygate|gatepro|garage door opener|ckmkzq/.test(s)) return "mygate";
+  if (/feyree|portable charger|ev charger|evse/.test(s)) return "feyree";
+  if (/新风分体机|air conditioner|aircon|climate/.test(s)) return "aircon";
+  return undefined;
+}
+
+function mergeFunctions(profile: TuyaDevice["profile"], source: TuyaSpecPoint[]): TuyaSpecPoint[] {
+  const out = [...source];
+  const add = (point: TuyaSpecPoint) => { if (!out.some(x => x.code === point.code)) out.push(point); };
+  if (profile === "mygate") {
+    for (const code of ["light_1","stop_1","pedestrian_1","start_1","open_1","close_1"]) add({ code, type: "Boolean", values: "{}" });
+  }
+  if (profile === "feyree") add({ code: "switchsvg", type: "Boolean", values: "{}" });
+  if (profile === "aircon") add({ code: "Powersvg", type: "Boolean", values: "{}" });
+  return out;
+}
 
 const EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 function sha256(input: string) { return crypto.createHash("sha256").update(input).digest("hex"); }
@@ -135,12 +156,16 @@ export class TuyaClient {
       for (;;) {
         const i = index++; if (i >= all.length) return;
         const d = all[i]; const spec = await this.specs(String(d.id));
+        const name = String(d.name || d.product_name || "Tuya eszköz");
+        const productName = String(d.product_name || "");
+        const category = String(d.category || "");
+        const profile = inferProfile(name, productName, category);
         devices[i] = {
-          id: String(d.id), name: String(d.name || d.product_name || "Tuya eszköz"), online: Boolean(d.online),
-          category: String(d.category || ""), productName: String(d.product_name || ""), productId: d.product_id ? String(d.product_id) : undefined,
-          homeId: d.home_id !== undefined && d.home_id !== null ? String(d.home_id) : undefined,
+          id: String(d.id), name, online: Boolean(d.online),
+          category, productName, productId: d.product_id ? String(d.product_id) : undefined,
+          homeId: d.home_id !== undefined && d.home_id !== null ? String(d.home_id) : undefined, profile,
           status: Array.isArray(d.status) ? d.status.map((x: any) => ({ code: String(x.code), value: x.value })) : [],
-          functions: spec.functions, statusSpec: spec.status
+          functions: mergeFunctions(profile, spec.functions), statusSpec: spec.status
         };
       }
     }));

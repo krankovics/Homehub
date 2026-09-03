@@ -8,7 +8,7 @@ type NetworkStatus = { id:string; name:string; kind:string; online:boolean; admi
 type CopyState = { torrentName:string; destination:string; state:string; message?:string; attempts?:number; copiedBytes?:number; totalBytes?:number; currentFile?:string; fileCopiedBytes?:number; fileTotalBytes?:number; speedBytesPerSec?:number; etaSeconds?:number; percent?:number };
 type TuyaPoint = { code:string; value:unknown };
 type TuyaSpec = { code:string; type:string; values:string; dp_id?:number; dpId?:number };
-type TuyaDevice = { id:string; name:string; online:boolean; category:string; productName:string; productId?:string; homeId?:string; status:TuyaPoint[]; functions:TuyaSpec[]; statusSpec:TuyaSpec[] };
+type TuyaDevice = { id:string; name:string; online:boolean; category:string; productName:string; productId?:string; homeId?:string; profile?:"mygate"|"feyree"|"aircon"; status:TuyaPoint[]; functions:TuyaSpec[]; statusSpec:TuyaSpec[] };
 type TuyaScene = { id:string; name:string; homeId?:string; enabled?:boolean; capabilities?:Array<{interface_name?:string; commands?:string[]}> };
 type SmartHome = { configured:boolean; online:boolean; lastUpdatedAt:string|null; error?:string; devices:TuyaDevice[]; scenes:TuyaScene[] };
 type State = {
@@ -49,11 +49,14 @@ function specFor(d:TuyaDevice,code:string){return[...d.functions,...d.statusSpec
 function specValues(d:TuyaDevice,code:string){const x=specFor(d,code);if(!x)return{} as Record<string,unknown>;try{return JSON.parse(x.values||"{}") as Record<string,unknown>}catch{return{} as Record<string,unknown>}}
 function findFunction(d:TuyaDevice,patterns:string[],type?:string){return d.functions.find(x=>(!type||x.type.toLowerCase()===type.toLowerCase())&&patterns.some(p=>x.code.toLowerCase()===p||x.code.toLowerCase().includes(p)))}
 function findStatus(d:TuyaDevice,patterns:string[]){return d.status.find(x=>patterns.some(p=>x.code.toLowerCase()===p||x.code.toLowerCase().includes(p)))}
-function deviceKind(d:TuyaDevice):SmartFilter{const s=`${d.name} ${d.productName} ${d.category}`.toLowerCase();if(/feyree|portable charger|ev charger|evse|autó.*tölt|car charger/.test(s))return"charger";if(/air conditioner|klíma|climate|aircon/.test(s))return"climate";if(/temperature|humidity|hőmér|thermo|sensor/.test(s))return"sensor";if(/gate|kapu|garage|garázs|lock/.test(s))return"gate";if(/light|bulb|lamp|lámpa|rgb|cct/.test(s))return"light";if(/plug|socket|switch|outlet|konnektor/.test(s))return"switch";return"device"}
+function deviceKind(d:TuyaDevice):SmartFilter{if(d.profile==="feyree")return"charger";if(d.profile==="aircon")return"climate";if(d.profile==="mygate")return"gate";const s=`${d.name} ${d.productName} ${d.category}`.toLowerCase();if(/feyree|portable charger|ev charger|evse|autó.*tölt|car charger/.test(s))return"charger";if(/air conditioner|klíma|climate|aircon|新风分体机/.test(s))return"climate";if(/temperature|humidity|hőmér|thermo|sensor/.test(s))return"sensor";if(/gate|kapu|garage|garázs|lock/.test(s))return"gate";if(/light|bulb|lamp|lámpa|rgb|cct/.test(s))return"light";if(/plug|socket|switch|outlet|konnektor/.test(s))return"switch";return"device"}
 function metric(d:TuyaDevice,patterns:string[]){const p=findStatus(d,patterns);if(!p||typeof p.value!=="number")return null;const meta=specValues(d,p.code);const scale=Number(meta.scale||0);const v=p.value/Math.pow(10,scale);return{value:v,unit:String(meta.unit||""),scale}}
 function batteryPercent(d:TuyaDevice){const direct=["battery_percentage","battery_percent","battery_pct","battery_value"];const p=d.status.find(x=>direct.includes(x.code.toLowerCase())&&typeof x.value==="number");if(p){const meta=specValues(d,p.code);const scale=Number(meta.scale||0);let v=Number(p.value)/Math.pow(10,scale);const max=Number(meta.max||100);if(max>100&&v>100)v=v/max*100;if(v>=0&&v<=100)return Math.round(v)}const state=findStatus(d,["battery_state"]);if(state&&typeof state.value==="string"){const map:Record<string,number>={high:100,middle:55,medium:55,low:20};return map[state.value.toLowerCase()]??null}return null}
 function enumRange(d:TuyaDevice,code?:string):string[]{if(!code)return[];const m=specValues(d,code) as {range?:unknown};return Array.isArray(m.range)?m.range.map((value:unknown)=>String(value)):[]}
 function labelKind(kind:SmartFilter){return kind==="climate"?"Klíma":kind==="sensor"?"Szenzor":kind==="switch"?"Kapcsoló":kind==="light"?"Világítás":kind==="gate"?"Kapu":kind==="charger"?"Autótöltő":"Eszköz"}
+function gateStateLabel(value:unknown){const v=String(value??"").toLowerCase().replace(/[_-]+/g," ").trim();if(["closed","close","zárt"].includes(v))return"Zárt";if(["opening","nyitás","nyílik"].includes(v))return"Nyílik";if(["partially opened","partial open","part open","részben nyitva"].includes(v))return"Részben nyitva";if(["opened","open","nyitva"].includes(v))return"Nyitva";if(["closing","zárás","záródik"].includes(v))return"Záródik";return value===undefined||value===null||value===""?"Ismeretlen":String(value)}
+function humanValue(value:unknown){if(typeof value==="boolean")return value?"Be":"Ki";if(value===undefined||value===null||value==="")return"—";return String(value).replace(/_/g," ")}
+function boolState(d:TuyaDevice,code?:string){return code?Boolean(statusMap(d)[code]):false}
 
 function actionFunction(d:TuyaDevice,patterns:string[]){
   return d.functions.find(fn=>patterns.some(p=>fn.code.toLowerCase()===p||fn.code.toLowerCase().includes(p)));
@@ -90,73 +93,120 @@ function Login({onDone}:{onDone:()=>void}){
 
 function SmartDeviceCard({device,onCommand,onOpen}:{device:TuyaDevice;onCommand:(d:TuyaDevice,code:string,value:unknown)=>void;onOpen:(d:TuyaDevice)=>void}){
   const kind=deviceKind(device),sm=statusMap(device),battery=batteryPercent(device);
-  const temp=(kind==="sensor"||kind==="climate"||kind==="charger")?metric(device,["temp_current","va_temperature","temperature","temp_value","temp"]):null;
-  const hum=(kind==="sensor"||kind==="climate")?metric(device,["humidity_value","va_humidity","humidity","humid"]):null;
-  const switchFn=(kind==="switch"||kind==="light"||kind==="climate"||kind==="charger")?findFunction(device,["switch","switch_1","switch_led","power","power_switch","charge_switch"],"Boolean"):undefined;
+  const temp=(kind==="sensor"||kind==="climate"||kind==="charger")?metric(device,["temp_current","devicetemp","va_temperature","temperature","temp_value","temp"]):null;
+  const hum=(kind==="sensor"||kind==="climate")?metric(device,["humidity_current","humidity_value","va_humidity","humidity","humid"]):null;
+  const switchFn=(kind==="switch"||kind==="light"||kind==="climate"||kind==="charger")?findFunction(device,["powersvg","switchsvg","switch","switch_1","switch_led","power","power_switch","charge_switch"],"Boolean"):undefined;
   const switchCode=switchFn?.code;const switchValue=switchCode?Boolean(sm[switchCode]):undefined;
-  const setTempFn=kind==="climate"?findFunction(device,["temp_set","target_temp","temp_target","temp_set_f"]):undefined;
-  const modeFn=kind==="climate"?findFunction(device,["mode","work_mode"],"Enum"):undefined;
+  const setTempFn=kind==="climate"?findFunction(device,["temp_setsvg","temp_set","target_temp","temp_target","temp_set_f"]):undefined;
+  const modeFn=kind==="climate"?findFunction(device,["modesvg","mode","work_mode"],"Enum"):undefined;
   const setTempCode=setTempFn?.code,modeCode=modeFn?.code;
   const rawTarget=()=>{if(!setTempCode)return"";const v=sm[setTempCode];const m=specValues(device,setTempCode);const scale=Number(m.scale||0);return typeof v==="number"?String(v/Math.pow(10,scale)):""};
   const[target,setTarget]=useState(rawTarget);
   useEffect(()=>setTarget(rawTarget()),[device.id,setTempCode,sm[setTempCode||""]]);
-  const modeRange=enumRange(device,modeCode);
+  const modeRange=enumRange(device,modeCode),targetMeta=numericFunctionMeta(device,setTempFn);
   const readOnly=device.status.filter(p=>typeof p.value==="string"||typeof p.value==="number"||typeof p.value==="boolean").filter(p=>!/^switch/.test(p.code)).slice(0,3);
-  const volts=kind==="charger"?chargerMetric(device,["voltage","cur_voltage","voltage_a","input_voltage"],"V"):null;
-  const amps=kind==="charger"?chargerMetric(device,["current","cur_current","electric_current","charge_current","current_a"],"A"):null;
-  const power=kind==="charger"?chargerMetric(device,["power","cur_power","active_power","charge_power"],"kW"):null;
+  const volts=kind==="charger"?chargerMetric(device,["a_voltage","voltage","cur_voltage","voltage_a","input_voltage"],"V"):null;
+  const amps=kind==="charger"?chargerMetric(device,["a_current","current","cur_current","electric_current","charge_current","current_a"],"A"):null;
+  const power=kind==="charger"?chargerMetric(device,["devicekw","power","cur_power","active_power","charge_power"],"kW"):null;
+  const chargerState=kind==="charger"?findStatus(device,["work_statesvg","work_state","devicestate"]):null;
   return <article className={`smartDevice ${kind} ${device.online?"online":"offline"}`}>
     <div className="deviceHead"><div><span className={`deviceDot ${device.online?"on":""}`}></span><strong title={device.name}>{device.name}</strong></div><span className="deviceKind">{labelKind(kind)}</span></div>
     <small title={device.productName||device.category}>{device.productName||device.category||"Smart Life eszköz"} · {device.online?"Online":"Offline"}</small>
     {(temp||hum||battery!==null)&&<div className="metrics">{temp&&<span>🌡 {temp.value.toFixed(temp.scale>0?1:0)}{temp.unit?` ${temp.unit}`:" °C"}</span>}{hum&&<span>💧 {hum.value.toFixed(hum.scale>0?1:0)}{hum.unit?` ${hum.unit}`:" %"}</span>}{battery!==null&&<span>🔋 {battery}%</span>}</div>}
-    {kind==="charger"&&<div className="chargerSummary">{volts&&<span><b>{volts.value}</b>{volts.unit}</span>}{amps&&<span><b>{amps.value}</b>{amps.unit}</span>}{power&&<span><b>{power.value}</b>{power.unit}</span>}</div>}
+    {kind==="charger"&&<><div className="chargerSummary">{volts&&<span><b>{volts.value}</b>{volts.unit}</span>}{amps&&<span><b>{amps.value}</b>{amps.unit}</span>}{power&&<span><b>{power.value}</b>{power.unit}</span>}</div>{chargerState&&<div className="deviceStateLine">{humanValue(chargerState.value)}</div>}</>}
     <div className="deviceControls">
       {switchCode&&kind!=="gate"&&<button className={switchValue?"power on":"power"} disabled={!device.online} onClick={()=>onCommand(device,switchCode,!switchValue)}>{switchValue?"Kikapcsolás":"Bekapcsolás"}</button>}
-      {setTempCode&&kind==="climate"&&<div className="tempControl"><input aria-label="Célhőmérséklet" type="number" step="0.5" value={target} onChange={e=>setTarget(e.target.value)}/><button disabled={!device.online||!target} onClick={()=>{const m=specValues(device,setTempCode);const scale=Number(m.scale||0);onCommand(device,setTempCode,Math.round(Number(target)*Math.pow(10,scale)))}}>Beállítás</button></div>}
-      {modeCode&&modeRange.length>0&&kind==="climate"&&<label className="selectControl">Mód<select value={String(sm[modeCode]??"")} disabled={!device.online} onChange={e=>onCommand(device,modeCode,e.target.value)}>{modeRange.map((m:string)=><option value={m} key={m}>{m}</option>)}</select></label>}
-      {(kind==="gate"||kind==="charger")&&<button className="detailsBtn" disabled={!device.online} onClick={()=>onOpen(device)}>{kind==="gate"?"Kapu vezérlése":"Töltő részletei"}</button>}
+      {setTempCode&&kind==="climate"&&<div className="tempControl"><input aria-label="Célhőmérséklet" type="number" step={targetMeta?targetMeta.step/Math.pow(10,targetMeta.scale):1} min={targetMeta?targetMeta.min/Math.pow(10,targetMeta.scale):undefined} max={targetMeta?targetMeta.max/Math.pow(10,targetMeta.scale):undefined} value={target} onChange={e=>setTarget(e.target.value)}/><button disabled={!device.online||!target} onClick={()=>{const m=specValues(device,setTempCode);const scale=Number(m.scale||0);onCommand(device,setTempCode,Math.round(Number(target)*Math.pow(10,scale)))}}>Beállítás</button></div>}
+      {modeCode&&modeRange.length>0&&kind==="climate"&&<label className="selectControl">Mód<select value={String(sm[modeCode]??"")} disabled={!device.online} onChange={e=>onCommand(device,modeCode,e.target.value)}>{modeRange.map((m:string)=><option value={m} key={m}>{humanValue(m)}</option>)}</select></label>}
+      {(kind==="gate"||kind==="charger"||kind==="climate")&&<button className="detailsBtn" disabled={!device.online} onClick={()=>onOpen(device)}>{kind==="gate"?"Kapu vezérlése":kind==="charger"?"Töltő részletei":"Klíma részletei"}</button>}
     </div>
     {kind==="device"&&readOnly.length>0&&<div className="rawMetrics">{readOnly.map(p=><span key={p.code}>{p.code}: {String(p.value)}</span>)}</div>}
   </article>
 }
-
 function DeviceDetailDialog({device,onClose,onCommand}:{device:TuyaDevice;onClose:()=>void;onCommand:(d:TuyaDevice,code:string,value:unknown)=>void}){
   const kind=deviceKind(device),sm=statusMap(device);
-  const isGate=kind==="gate",isCharger=kind==="charger";
+  const isGate=kind==="gate",isCharger=kind==="charger",isClimate=kind==="climate";
+
   const gateActions=[
-    {key:"start",label:"Start",patterns:["start","run","gate_start"],preferred:["start","open"]},
-    {key:"pedestrian",label:"Személybejáró",patterns:["pedestrian","person","small_door","side_door","wicket"],preferred:["pedestrian","person","open"]},
-    {key:"stop",label:"Stop",patterns:["stop","pause","gate_stop"],preferred:["stop"]},
-    {key:"open",label:"Nyitás",patterns:["gate_open","door_open","open"],preferred:["open"]},
-    {key:"close",label:"Zárás",patterns:["gate_close","door_close","close"],preferred:["close"]},
-    {key:"light",label:"Világítás",patterns:["light","lamp","switch_led","light_switch"],preferred:["on","open"]},
+    {key:"start",label:"Start",patterns:["start_1","start","gate_start"]},
+    {key:"pedestrian",label:"Személybejáró",patterns:["pedestrian_1","pedestrian","wicket"]},
+    {key:"stop",label:"Stop",patterns:["stop_1","stop","gate_stop"]},
+    {key:"open",label:"Nyitás",patterns:["open_1","gate_open","door_open","open"]},
+    {key:"close",label:"Zárás",patterns:["close_1","gate_close","door_close","close"]},
+    {key:"light",label:"Világítás",patterns:["light_1","light","lamp","light_switch"]},
   ];
-  const gateState=findStatus(device,["gate_state","door_state","open_close_state","work_state","status"]);
-  const warning=findStatus(device,["warning","alarm","fault","alert"]);
-  const chargerSwitch=findFunction(device,["charge_switch","switch","power","start_charge"],"Boolean");
-  const currentFn=actionFunction(device,["set_current","current_set","charge_current_set","charge_current","rated_current","current_limit"]);
-  const delayFn=actionFunction(device,["delay_time","set_delaytime","delay_charge","delay"]);
-  const chargeTimeFn=actionFunction(device,["set_charge_time","charge_time_set","charge_time","duration"]);
-  const[current,setCurrent]=useState(()=>currentFn&&sm[currentFn.code]!==undefined?String(sm[currentFn.code]):"");const[delay,setDelay]=useState(()=>delayFn&&sm[delayFn.code]!==undefined?String(sm[delayFn.code]):"");const[chargeTime,setChargeTime]=useState(()=>chargeTimeFn&&sm[chargeTimeFn.code]!==undefined?String(sm[chargeTimeFn.code]):"");
+  const gateState=findStatus(device,["door_sensor_state","gate_state","door_state","open_close_state","work_state"]);
+  const warning=findStatus(device,["alarms","warning","alarm","fault","alert"]);
+  const keepOpen=findStatus(device,["keep_open"]),pauseTime=findStatus(device,["pause_time"]),operativeMode=findStatus(device,["operative_mode_1"]);
+
+  const chargerSwitch=findFunction(device,["switchsvg","switch","charge_switch","power","start_charge"],"Boolean");
+  const currentFn=actionFunction(device,["devicemaxseta","set_current","current_set","charge_current_set","current_limit"]);
+  const delayFn=actionFunction(device,["setdelaytime","delay_time","set_delaytime","delay_charge"]);
+  const chargeTimeFn=actionFunction(device,["setdefinetime","set_charge_time","charge_time_set","charge_time","duration"]);
+  const[current,setCurrent]=useState(()=>currentFn&&sm[currentFn.code]!==undefined?String(Number(sm[currentFn.code])/Math.pow(10,Number(specValues(device,currentFn.code).scale||0))):"");
+  const[delay,setDelay]=useState(()=>delayFn&&sm[delayFn.code]!==undefined?String(Number(sm[delayFn.code])/Math.pow(10,Number(specValues(device,delayFn.code).scale||0))):"");
+  const[chargeTime,setChargeTime]=useState(()=>chargeTimeFn&&sm[chargeTimeFn.code]!==undefined?String(Number(sm[chargeTimeFn.code])/Math.pow(10,Number(specValues(device,chargeTimeFn.code).scale||0))):"");
   const currentMeta=numericFunctionMeta(device,currentFn),delayMeta=numericFunctionMeta(device,delayFn),chargeMeta=numericFunctionMeta(device,chargeTimeFn);
-  const metrics=[
-    ["Hőmérséklet",chargerMetric(device,["temperature","temp","charger_temp"],"°C")],
-    ["Feszültség",chargerMetric(device,["voltage","cur_voltage","voltage_a","input_voltage"],"V")],
-    ["Áramerősség",chargerMetric(device,["current","cur_current","electric_current","current_a"],"A")],
-    ["Teljesítmény",chargerMetric(device,["power","cur_power","active_power","charge_power"],"kW")],
-    ["Energia",chargerMetric(device,["energy","add_ele","total_energy","electricity","charge_energy"],"kWh")],
-    ["CP",chargerMetric(device,["cp_state","cp_status","cp"],"")],
+  const chargerMetrics=[
+    ["Hőmérséklet",chargerMetric(device,["devicetemp","temperature","temp","charger_temp"],"°C")],
+    ["Feszültség",chargerMetric(device,["a_voltage","voltage","cur_voltage","voltage_a","input_voltage"],"V")],
+    ["Áramerősség",chargerMetric(device,["a_current","current","cur_current","electric_current","current_a"],"A")],
+    ["Teljesítmény",chargerMetric(device,["devicekw","power","cur_power","active_power","charge_power"],"kW")],
+    ["Energia",chargerMetric(device,["devicekwh","kwh","energy","total_energy","electricity"],"kWh")],
+    ["CP",chargerMetric(device,["cp"],"")],
   ] as Array<[string,{value:string;unit:string}|null]>;
-  function sendNumeric(fn:TuyaSpec|undefined,raw:string,meta:ReturnType<typeof numericFunctionMeta>){if(!fn||!raw||!meta)return;const value=Math.round(Number(raw)*Math.pow(10,meta.scale));onCommand(device,fn.code,value)}
-  return <div className="modalBack" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><section className={`modal deviceDetail ${isGate?"gateDetail":"chargerDetail"}`}><div className="detailHead"><div><span className="deviceKind">{labelKind(kind)}</span><h2>{device.name}</h2><p>{device.productName||device.category} · {device.online?"Online":"Offline"}</p></div><button className="closeBtn" onClick={onClose}>×</button></div>
-    {isGate&&<><div className="gateHero"><div className="gateGlyph">▰▰▰</div><div><strong>Kapuvezérlés</strong><span>{gateState?`Állapot: ${String(gateState.value)}`:"Állapot: nincs adat"}</span></div></div><div className="gateActionGrid">{gateActions.map(a=>{const fn=actionFunction(device,a.patterns);return <button key={a.key} disabled={!device.online||!fn} onClick={()=>{if(!fn)return;if(a.key!=="light"&&!window.confirm(`${device.name}: ${a.label} végrehajtása?`))return;onCommand(device,fn.code,a.key==="light"&&fn.type.toLowerCase()==="boolean"?!Boolean(sm[fn.code]):actionValue(fn,a.preferred))}}><span>{a.key==="start"?"▶":a.key==="stop"?"■":a.key==="open"?"⌂":a.key==="close"?"🔒":a.key==="light"?"💡":"●"}</span>{a.label}<small>{fn?fn.code:"nem elérhető"}</small></button>})}</div><div className="gateStatusGrid"><div><span>Kapu állapota</span><strong>{gateState?String(gateState.value):"Ismeretlen"}</strong></div><div><span>Figyelmeztetés</span><strong>{warning?String(warning.value):"Nincs"}</strong></div></div></>}
-    {isCharger&&<><div className="chargerHero"><div className="chargerMetrics">{metrics.map(([label,m])=><div key={label}><span>{label}</span><strong>{m?`${m.value}${m.unit?` ${m.unit}`:""}`:"—"}</strong></div>)}</div></div><div className="chargerActions">{chargerSwitch&&<button className={Boolean(sm[chargerSwitch.code])?"danger":"primary"} onClick={()=>onCommand(device,chargerSwitch.code,!Boolean(sm[chargerSwitch.code]))}>{Boolean(sm[chargerSwitch.code])?"Töltés leállítása":"Töltés indítása"}</button>}<SettingControl device={device} fn={currentFn} label="Max. áramerősség" value={current} setValue={setCurrent} meta={currentMeta} suffix="A" onSave={()=>sendNumeric(currentFn,current,currentMeta)} onCommand={onCommand}/><SettingControl device={device} fn={delayFn} label="Késleltetés" value={delay} setValue={setDelay} meta={delayMeta} suffix="h" onSave={()=>sendNumeric(delayFn,delay,delayMeta)} onCommand={onCommand}/><SettingControl device={device} fn={chargeTimeFn} label="Töltési idő" value={chargeTime} setValue={setChargeTime} meta={chargeMeta} suffix="h" onSave={()=>sendNumeric(chargeTimeFn,chargeTime,chargeMeta)} onCommand={onCommand}/></div></>}
+  const chargerInfo=[
+    ["Állapot",findStatus(device,["work_statesvg","work_state","devicestate"])],
+    ["Mód",findStatus(device,["work_modesvg","work_mode"])],
+    ["Töltés energia",findStatus(device,["charge_energy_oncesvg","charge_energy_once"])],
+    ["Töltési idő",findStatus(device,["ctime"])],
+    ["PE",findStatus(device,["pe"])],
+    ["Művelet",findStatus(device,["chargingoperation"])],
+  ] as Array<[string,TuyaPoint|undefined]>;
+  const phaseMetrics=[
+    ["L1 feszültség",chargerMetric(device,["a_voltage"],"V")],["L1 áram",chargerMetric(device,["a_current"],"A")],
+    ["L2 feszültség",chargerMetric(device,["b_voltage"],"V")],["L2 áram",chargerMetric(device,["b_current"],"A")],
+    ["L3 feszültség",chargerMetric(device,["c_voltage"],"V")],["L3 áram",chargerMetric(device,["c_current"],"A")],
+  ] as Array<[string,{value:string;unit:string}|null]>;
+
+  const climatePower=findFunction(device,["powersvg","switch","power"],"Boolean");
+  const climateTempFn=findFunction(device,["temp_setsvg","temp_set","target_temp","temp_target"]);
+  const climateModeFn=findFunction(device,["modesvg","mode"],"Enum");
+  const windFn=findFunction(device,["windspeed","fan_speed","wind_speed"],"Enum");
+  const upDownFn=actionFunction(device,["up_down_sweep"]),leftRightFn=actionFunction(device,["left_right_sweep"]),sleepFn=actionFunction(device,["sleep"]),freshAirFn=actionFunction(device,["fresh_air"]);
+  const climateTargetMeta=numericFunctionMeta(device,climateTempFn);
+  const[climateTarget,setClimateTarget]=useState(()=>{if(!climateTempFn||sm[climateTempFn.code]===undefined)return"";const scale=Number(specValues(device,climateTempFn.code).scale||0);return String(Number(sm[climateTempFn.code])/Math.pow(10,scale))});
+  const climateMetrics=[
+    ["Aktuális hőmérséklet",displayMetric(device,["temp_currentsvg","temp_current"],"°C")],
+    ["Páratartalom",displayMetric(device,["humidity_currentsvg","humidity_current"],"%")],
+    ["PM2.5",displayMetric(device,["pm25"],"µg/m³")],
+    ["Levegőminőség",displayMetric(device,["airquality"],"")],
+    ["Energia",displayMetric(device,["kwh","energy"],"kWh")],
+    ["Üzemidő",displayMetric(device,["run_time","work_time"],"")],
+  ] as Array<[string,{value:string;unit:string}|null]>;
+
+  function sendNumeric(fn:TuyaSpec|undefined,raw:string,meta:ReturnType<typeof numericFunctionMeta>){
+    if(!fn||!raw||!meta)return;const human=Number(raw);if(!Number.isFinite(human))return;
+    const factor=Math.pow(10,meta.scale),value=Math.round(human*factor);
+    if(value<meta.min||value>meta.max){window.alert(`Az engedélyezett tartomány: ${meta.min/factor}–${meta.max/factor}.`);return}
+    if(meta.step>0&&Math.abs((value-meta.min)/meta.step-Math.round((value-meta.min)/meta.step))>1e-7){window.alert("Az érték nem illeszkedik a Tuya által megadott lépésközhöz.");return}
+    onCommand(device,fn.code,value);
+  }
+  function boolControl(label:string,fn:TuyaSpec|undefined){if(!fn)return null;const on=boolState(device,fn.code);return <button className={on?"toggleAction on":"toggleAction"} onClick={()=>onCommand(device,fn.code,!on)}>{label}<small>{on?"Be":"Ki"}</small></button>}
+  function enumControl(label:string,fn:TuyaSpec|undefined){if(!fn)return null;const range=enumRange(device,fn.code);if(!range.length)return null;return <label className="detailSelect"><span>{label}</span><select value={String(sm[fn.code]??range[0])} onChange={e=>onCommand(device,fn.code,e.target.value)}>{range.map(v=><option key={v} value={v}>{humanValue(v)}</option>)}</select></label>}
+
+  const detailClass=isGate?"gateDetail":isCharger?"chargerDetail":"climateDetail";
+  return <div className="modalBack" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><section className={`modal deviceDetail ${detailClass}`}><div className="detailHead"><div><span className="deviceKind">{labelKind(kind)}</span><h2>{device.name}</h2><p>{device.productName||device.category} · {device.online?"Online":"Offline"}</p></div><button className="closeBtn" onClick={onClose}>×</button></div>
+    {isGate&&<><div className={`gateHero gate-${String(gateState?.value||"").toLowerCase().replace(/\s+/g,"-")}`}><div className="gateGlyph">▰▰▰</div><div><strong>Kapuvezérlés</strong><span>Állapot: {gateStateLabel(gateState?.value)}</span></div></div><div className="gateActionGrid">{gateActions.map(a=>{const fn=actionFunction(device,a.patterns);const needsConfirm=["start","pedestrian","open","close"].includes(a.key);return <button key={a.key} disabled={!device.online||!fn} onClick={()=>{if(!fn)return;if(needsConfirm&&!window.confirm(`${device.name}: ${a.label} végrehajtása?`))return;onCommand(device,fn.code,true)}}><span>{a.key==="start"?"▶":a.key==="stop"?"■":a.key==="open"?"⌂":a.key==="close"?"🔒":a.key==="light"?"💡":"●"}</span>{a.label}<small>{fn?fn.code:"nem elérhető"}</small></button>})}</div><div className="gateStatusGrid"><div><span>Kapu állapota</span><strong>{gateStateLabel(gateState?.value)}</strong></div><div><span>Figyelmeztetés</span><strong>{warning?humanValue(warning.value):"Nincs"}</strong></div></div>{(keepOpen||pauseTime||operativeMode)&&<div className="detailInfoGrid">{keepOpen&&<div><span>Nyitva tartás</span><strong>{humanValue(keepOpen.value)}</strong></div>}{pauseTime&&<div><span>Automata zárási idő</span><strong>{humanValue(pauseTime.value)}</strong></div>}{operativeMode&&<div><span>Üzemmód</span><strong>{humanValue(operativeMode.value)}</strong></div>}</div>}<div className="safetyNote">A myGate Open / Close / Start / Stop / Pedestrian / Light parancsai impulzusos DP-k. A HomeHub csak <b>On / true</b> impulzust küld, az eszköz állítja vissza Off-ra.</div></>}
+
+    {isCharger&&<><div className="chargerHero"><div className="chargerMetrics">{chargerMetrics.map(([label,m])=><div key={label}><span>{label}</span><strong>{m?`${m.value}${m.unit?` ${m.unit}`:""}`:"—"}</strong></div>)}</div></div><div className="detailInfoGrid">{chargerInfo.map(([label,p])=><div key={label}><span>{label}</span><strong>{p?humanValue(p.value):"—"}</strong></div>)}</div><div className="chargerActions">{chargerSwitch&&<button className={Boolean(sm[chargerSwitch.code])?"danger":"primary"} onClick={()=>onCommand(device,chargerSwitch.code,!Boolean(sm[chargerSwitch.code]))}>{Boolean(sm[chargerSwitch.code])?"Töltés leállítása":"Töltés indítása"}</button>}<SettingControl device={device} fn={currentFn} label="Max. áramerősség" value={current} setValue={setCurrent} meta={currentMeta} suffix="A" onSave={()=>sendNumeric(currentFn,current,currentMeta)} onCommand={onCommand}/><SettingControl device={device} fn={delayFn} label="Késleltetés" value={delay} setValue={setDelay} meta={delayMeta} suffix="h" onSave={()=>sendNumeric(delayFn,delay,delayMeta)} onCommand={onCommand}/><SettingControl device={device} fn={chargeTimeFn} label="Töltési idő" value={chargeTime} setValue={setChargeTime} meta={chargeMeta} suffix="h" onSave={()=>sendNumeric(chargeTimeFn,chargeTime,chargeMeta)} onCommand={onCommand}/></div>{phaseMetrics.some(([,m])=>Boolean(m))&&<><h3 className="detailSubhead">Fázisadatok</h3><div className="detailInfoGrid">{phaseMetrics.filter(([,m])=>Boolean(m)).map(([label,m])=><div key={label}><span>{label}</span><strong>{m?`${m.value} ${m.unit}`:"—"}</strong></div>)}</div></>}<div className="safetyNote">Áramerősséget a HomeHub csak akkor enged állítani, ha a Tuya API a DP-hez konkrét típust, minimumot, maximumot és lépésközt publikál. A Set16A / Set32A / Set40A / Set50A / set60a / set80a DP-ket nem aktiváljuk találomra.</div></>}
+
+    {isClimate&&<><div className="climateHero"><div><span>Aktuális</span><strong>{climateMetrics[0][1]?`${climateMetrics[0][1]!.value} ${climateMetrics[0][1]!.unit}`:"—"}</strong></div><div><span>Cél</span><strong>{climateTempFn&&sm[climateTempFn.code]!==undefined?`${climateTarget||humanValue(sm[climateTempFn.code])} °C`:"—"}</strong></div><div><span>Mód</span><strong>{climateModeFn?humanValue(sm[climateModeFn.code]):"—"}</strong></div></div><div className="climatePrimary">{climatePower&&<button className={Boolean(sm[climatePower.code])?"powerAction on":"powerAction"} onClick={()=>onCommand(device,climatePower.code,!Boolean(sm[climatePower.code]))}>{Boolean(sm[climatePower.code])?"Klíma kikapcsolása":"Klíma bekapcsolása"}</button>}{climateTempFn&&climateTargetMeta&&<SettingControl device={device} fn={climateTempFn} label="Célhőmérséklet" value={climateTarget} setValue={setClimateTarget} meta={climateTargetMeta} suffix="°C" onSave={()=>sendNumeric(climateTempFn,climateTarget,climateTargetMeta)} onCommand={onCommand}/>}</div><div className="climateControls">{enumControl("Üzemmód",climateModeFn)}{enumControl("Ventilátor",windFn)}{boolControl("Fel/le swing",upDownFn?.type.toLowerCase()==="boolean"?upDownFn:undefined)}{enumControl("Fel/le swing",upDownFn?.type.toLowerCase()==="enum"?upDownFn:undefined)}{boolControl("Bal/jobb swing",leftRightFn?.type.toLowerCase()==="boolean"?leftRightFn:undefined)}{enumControl("Bal/jobb swing",leftRightFn?.type.toLowerCase()==="enum"?leftRightFn:undefined)}{boolControl("Sleep",sleepFn?.type.toLowerCase()==="boolean"?sleepFn:undefined)}{boolControl("Friss levegő",freshAirFn?.type.toLowerCase()==="boolean"?freshAirFn:undefined)}</div><div className="detailInfoGrid">{climateMetrics.filter(([,m])=>Boolean(m)).map(([label,m])=><div key={label}><span>{label}</span><strong>{m?`${m.value}${m.unit?` ${m.unit}`:""}`:"—"}</strong></div>)}</div><div className="detailInfoGrid compact">{[["Szűrő",findStatus(device,["freshair_filter","dirty_filter"])],["Hiba",findStatus(device,["fault","fault2"])],["Firmware",findStatus(device,["sn_sw_ver"])],["Levegő",findStatus(device,["fresh_air"])]] .filter(([,p])=>Boolean(p)).map(([label,p])=><div key={String(label)}><span>{String(label)}</span><strong>{humanValue((p as TuyaPoint).value)}</strong></div>)}</div><div className="safetyNote">A célhőmérséklet, ventilátor és mód csak a Tuya által publikált DP-specifikáció szerint vezérelhető. Ismeretlen enumot vagy tartományon kívüli hőfokot a HomeHub nem küld el.</div></>}
   </section></div>
 }
-
 function SettingControl({device,fn,label,value,setValue,meta,suffix,onSave,onCommand}:{device:TuyaDevice;fn:TuyaSpec|undefined;label:string;value:string;setValue:(v:string)=>void;meta:ReturnType<typeof numericFunctionMeta>;suffix:string;onSave:()=>void;onCommand:(d:TuyaDevice,code:string,value:unknown)=>void}){
   const options=fn?.type.toLowerCase()==="enum"?enumRange(device,fn.code):[];
-  if(options.length>0)return <div className="settingRow"><div><strong>{label}</strong><small>A töltő által engedélyezett értékek.</small></div><div className="settingInput"><select value={value||options[0]} onChange={e=>{setValue(e.target.value);onCommand(device,fn!.code,e.target.value)}}>{options.map(v=><option value={v} key={v}>{v}{suffix}</option>)}</select></div></div>;
+  if(options.length>0)return <div className="settingRow"><div><strong>{label}</strong><small>A Tuya által engedélyezett értékek.</small></div><div className="settingInput"><select value={value||options[0]} onChange={e=>{setValue(e.target.value);onCommand(device,fn!.code,e.target.value)}}>{options.map(v=><option value={v} key={v}>{v}{suffix}</option>)}</select></div></div>;
   return <SettingRow label={label} value={value} setValue={setValue} meta={meta} suffix={suffix} onSave={onSave}/>;
 }
 
@@ -227,7 +277,7 @@ function App(){
   async function retryCopy(hash:string){try{await api(`/api/copies/${encodeURIComponent(hash)}/retry`,{method:"POST"});flash("Másolás újrapróbálása elküldve.")}catch(err){flash(`Hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}load()}
   async function removeTorrent(deleteData:boolean){if(!deleteTarget)return;const t=deleteTarget;setDeleteTarget(null);try{await api(`/api/torrents/${t.id}`,{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({deleteData,confirm:true})});flash(deleteData?"Torrent és KD20 fájlok törlése elküldve. A WD másolat megmarad.":"Torrent eltávolítása elküldve. A KD20 fájlok megmaradnak.")}catch(err){flash(`Törlési hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}setTimeout(load,1000)}
   async function updateSettings(patch:Partial<State["settings"]>){if(!state)return;const next={...state.settings,...patch};try{await api("/api/settings",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(next)});load()}catch(err){flash(`Hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}}
-  async function smartCommand(d:TuyaDevice,code:string,value:unknown){try{await api(`/api/smart-home/devices/${encodeURIComponent(d.id)}/command`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code,value,confirm:isDangerous(d.name)})});flash(`${d.name}: parancs elküldve`);setTimeout(load,900)}catch(err){flash(`Smart Life hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}}
+  async function smartCommand(d:TuyaDevice,code:string,value:unknown){try{await api(`/api/smart-home/devices/${encodeURIComponent(d.id)}/command`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code,value,confirm:deviceKind(d)==="gate"||isDangerous(d.name)})});flash(`${d.name}: parancs elküldve`);setTimeout(load,900)}catch(err){flash(`Smart Life hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}}
   async function runScene(s:TuyaScene){const dangerous=isDangerous(s.name);if(dangerous&&!window.confirm(`${s.name}: biztosan elindítod ezt a jelenetet?`))return;try{await api(`/api/smart-home/scenes/${encodeURIComponent(s.id)}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({confirm:dangerous})});flash(`${s.name}: jelenet elindítva`);setTimeout(load,700)}catch(err){flash(`Jelenet hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}}
   async function refreshSmart(){try{await api("/api/smart-home/refresh",{method:"POST"});load();flash("Smart Life frissítve")}catch(err){flash(`Tuya hiba: ${err instanceof Error?err.message:"ismeretlen"}`)}}
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});setState(null);setAuth("no")}
@@ -250,7 +300,7 @@ function App(){
 
     {tab==="printer"&&<div className="tabPanel"><section className="panel printerPanel"><div><h2>USB nyomtatómegosztás</h2><p>A KD20 USB Print Server funkcióját használjuk.</p></div><div className="printerStatus"><span className={printer?.online?"statusBadge good":"statusBadge"}>{printer?.online?"Nyomtatószolgáltatás elérhető":"Nyomtató még nincs észlelve"}</span><small>{printer?.note||"A Bridge figyeli a nyomtatóportokat."}</small></div><div className="printerActions">{printer?.adminUrl&&<a className="actionLink" href={printer.adminUrl} target="_blank" rel="noreferrer">KD20 Printer Setting</a>}<span>USB → KD20 → Printer Setting → Enable.</span></div></section><section className="panel helpPanel"><h2>Windows hozzáadás</h2><p>A nyomtató bekapcsolása után a KD20 hálózati print serverét használhatod. A pontos driver a nyomtató típusától függ.</p><div className="stepGrid"><span><b>1</b> Nyomtató USB-n a KD20-ra</span><span><b>2</b> Printer Setting → Enable</span><span><b>3</b> Windowsban hálózati nyomtató hozzáadása</span></div></section></div>}
 
-    {tab==="settings"&&<div className="tabPanel"><section className="panel settings settingsPanel"><div><h2>Torrent automatika</h2><p>A kész torrentet WD-re másolja, a KD20-on seedeléshez megőrzi. A beállítás a WD-n is tartósan mentődik.</p></div><label className="switch"><input type="checkbox" checked={state?.settings.autoCopyEnabled||false} onChange={e=>updateSettings({autoCopyEnabled:e.target.checked})}/><span></span> Automatikus másolás</label><label>Célmappa a WD-n<input value={state?.settings.autoCopyDestination||""} onChange={e=>setState(s=>s?({...s,settings:{...s.settings,autoCopyDestination:e.target.value}}):s)} onBlur={e=>updateSettings({autoCopyDestination:e.target.value})}/></label></section><section className="panel systemInfo"><div><span>Bridge</span><strong>{state?.bridgeOnline?"Online":"Offline"}</strong><small>Utolsó kapcsolat: {bridgeAge(state?.bridgeLastSeenAt)}</small></div><div><span>WD állapotmentés</span><strong>Aktív</strong><small>/DataVolume/homehub/server-state.json</small></div><div><span>HomeHub</span><strong>v0.11.0</strong><small>Kapu- és autótöltő vezérlés + Wi-Fi kliensnézet</small></div></section></div>}
+    {tab==="settings"&&<div className="tabPanel"><section className="panel settings settingsPanel"><div><h2>Torrent automatika</h2><p>A kész torrentet WD-re másolja, a KD20-on seedeléshez megőrzi. A beállítás a WD-n is tartósan mentődik.</p></div><label className="switch"><input type="checkbox" checked={state?.settings.autoCopyEnabled||false} onChange={e=>updateSettings({autoCopyEnabled:e.target.checked})}/><span></span> Automatikus másolás</label><label>Célmappa a WD-n<input value={state?.settings.autoCopyDestination||""} onChange={e=>setState(s=>s?({...s,settings:{...s.settings,autoCopyDestination:e.target.value}}):s)} onBlur={e=>updateSettings({autoCopyDestination:e.target.value})}/></label></section><section className="panel systemInfo"><div><span>Bridge</span><strong>{state?.bridgeOnline?"Online":"Offline"}</strong><small>Utolsó kapcsolat: {bridgeAge(state?.bridgeLastSeenAt)}</small></div><div><span>WD állapotmentés</span><strong>Aktív</strong><small>/DataVolume/homehub/server-state.json</small></div><div><span>HomeHub</span><strong>v0.11.1</strong><small>myGate + feyree + klíma DP Instruction vezérlés</small></div></section></div>}
   </main>
 }
 

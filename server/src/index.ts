@@ -9,7 +9,7 @@ import { Store } from "./store.js";
 import type { Command, PersistentBackup, Snapshot } from "./types.js";
 import { TuyaService } from "./tuya.js";
 
-const VERSION = "0.11.0";
+const VERSION = "0.11.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -250,13 +250,43 @@ app.post("/api/smart-home/refresh", userAuth, async (_req, res) => {
   await tuya.refresh();
   res.json(tuya.state());
 });
+function validateTuyaCommand(device: ReturnType<typeof tuya.state>["devices"][number], code: string, value: unknown): string | null {
+  const fn = device.functions.find((x) => x.code === code);
+  if (!fn) return "unsupported_dp_instruction";
+  const type = fn.type.toLowerCase();
+  let meta: Record<string, unknown> = {};
+  try { meta = JSON.parse(fn.values || "{}"); } catch { meta = {}; }
+  if (device.profile === "mygate" && ["light_1","stop_1","pedestrian_1","start_1","open_1","close_1"].includes(code) && value !== true) return "gate_pulse_must_be_true";
+  if (type === "boolean" && typeof value !== "boolean") return "invalid_boolean_value";
+  if (type === "enum") {
+    const range = Array.isArray(meta.range) ? meta.range.map(String) : [];
+    if (range.length && !range.includes(String(value))) return "invalid_enum_value";
+  }
+  if (type === "integer" || type === "value") {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "invalid_numeric_value";
+    const min = Number(meta.min); const max = Number(meta.max); const step = Number(meta.step || 1);
+    if (Number.isFinite(min) && value < min) return "value_below_minimum";
+    if (Number.isFinite(max) && value > max) return "value_above_maximum";
+    if (Number.isFinite(min) && Number.isFinite(step) && step > 0 && Math.abs((value - min) / step - Math.round((value - min) / step)) > 1e-7) return "invalid_value_step";
+  }
+  return null;
+}
+
+app.get("/api/smart-home/devices/:id/debug", userAuth, (req, res) => {
+  const device = tuya.state().devices.find((d) => d.id === paramString(req.params.id));
+  if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
+  res.json({ id: device.id, name: device.name, profile: device.profile || null, productName: device.productName, category: device.category, online: device.online, status: device.status, functions: device.functions, statusSpec: device.statusSpec });
+});
+
 app.post("/api/smart-home/devices/:id/command", userAuth, async (req, res) => {
   const parsed = z.object({ code: z.string().min(1).max(128), value: z.unknown(), confirm: z.boolean().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const device = tuya.state().devices.find((d) => d.id === paramString(req.params.id));
   if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
-  const dangerous = /kapu|gate|garage|garázs|door|lock|zár/i.test(`${device.name} ${device.productName}`);
+  const dangerous = device.profile === "mygate" || /kapu|gate|garage|garázs|door|lock|zár/i.test(`${device.name} ${device.productName}`);
   if (dangerous && parsed.data.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
+  const validationError = validateTuyaCommand(device, parsed.data.code, parsed.data.value);
+  if (validationError) return res.status(400).json({ error: validationError });
   try { await tuya.command(device.id, parsed.data.code, parsed.data.value); res.json({ ok: true }); }
   catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
 });
