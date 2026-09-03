@@ -146,6 +146,37 @@ func Load(path string, requireCloud bool) (Config, error) {
 			{ID: "re315-2", Name: "TP-Link RE315 #2", Kind: "extender", MAC: "0C-EF-15-1B-FE-CE", ProbePorts: []int{80, 443}},
 		}
 	}
+	// Merge the known home topology into older config files too, so an existing
+	// /DataVolume/homehub/config.json does not have to be replaced on upgrade.
+	type networkTarget = struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Kind       string `json:"kind"`
+		IP         string `json:"ip"`
+		MAC        string `json:"mac"`
+		AdminURL   string `json:"adminUrl"`
+		ProbePorts []int  `json:"probePorts"`
+	}
+	hasDevice := func(id string) bool {
+		for _, d := range c.Network.Devices {
+			if d.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	ensure := func(d networkTarget) {
+		if !hasDevice(d.ID) {
+			c.Network.Devices = append(c.Network.Devices, d)
+		}
+	}
+	ensure(networkTarget{ID: "tl-sg108e", Name: "TL-SG108E", Kind: "switch", IP: "192.168.1.49", MAC: "78:8C:B5:5F:7F:04", AdminURL: "http://192.168.1.49", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "kd20", Name: "KD20 / oldnas", Kind: "nas", IP: "192.168.1.12", MAC: "80:EE:73:49:89:0C", AdminURL: "http://192.168.1.12", ProbePorts: []int{80, 9091}})
+	ensure(networkTarget{ID: "wd-my-cloud", Name: "WD My Cloud", Kind: "nas", IP: "192.168.1.180", MAC: "00:90:A9:D2:BB:EA", AdminURL: "http://192.168.1.180", ProbePorts: []int{80, 22}})
+	ensure(networkTarget{ID: "desktop-e6k3sek", Name: "DESKTOP-E6K3SEK", Kind: "computer", IP: "192.168.1.25", MAC: "30:56:0F:22:F7:B9"})
+	ensure(networkTarget{ID: "dorkapc", Name: "DorkaPC", Kind: "computer", IP: "192.168.1.210", MAC: "CC:28:AA:35:DB:1D"})
+	ensure(networkTarget{ID: "davidgaming", Name: "davidgaming", Kind: "computer", IP: "192.168.1.138", MAC: "30:C5:99:7F:9B:50"})
+	ensure(networkTarget{ID: "krankovics-mbp", Name: "Krankovics-MBP", Kind: "computer", IP: "192.168.1.114", MAC: "C4:B3:01:C5:0B:8D"})
 	for i := range c.Network.Devices {
 		if len(c.Network.Devices[i].ProbePorts) == 0 {
 			c.Network.Devices[i].ProbePorts = []int{80, 443}

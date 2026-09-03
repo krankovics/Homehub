@@ -1,140 +1,159 @@
-# HomeHub v0.9.2
+# HomeHub v0.10.0
 
-Otthoni vezérlőközpont a jelenlegi setuphoz:
+Otthoni vezérlőközpont a jelenlegi setuphoz: Shuttle OMNINAS KD20 + WD My Cloud + Technicolor/TP-Link hálózat + Smart Life/Tuya + USB nyomtató.
 
-- Shuttle OMNINAS KD20 + Transmission
-- WD My Cloud OS 3 / ARMv7 Bridge
-- KD20 → WD automatikus másolás, progresszel
-- KD20 USB Print Server állapot
-- Technicolor FGA2233, Archer C6, RE220, 2× RE315
-- Smart Life / Tuya Central Europe
-- PWA / Render webfelület
+## v0.10.0 újdonságok
 
-## v0.9.2 hotfix + v0.9 újdonságok
+### Új, tabos kezelőfelület
 
-### v0.9.2 hotfix
+A korábbi hosszú egyoldalas dashboard helyett hat külön nézet van:
 
-- Külön 20 másodperces bridge heartbeat fut a hosszú SMB másolásoktól, LAN probe-októl és parancsoktól függetlenül.
-- A Render külön `/api/bridge/heartbeat` végponton frissíti a jelenlétet, ezért egy hosszú másolás alatt sem szabad tévesen offline-ra váltania.
-- A PWA cache verzió frissült; a service worker `updateViaCache: "none"` módban frissül, az app shell és a `sw.js` no-cache fejlécet kap.
-- Offline állapotnál a fejléc kiírja az utolsó Bridge kapcsolat óta eltelt időt.
+1. **Áttekintés** – fő státuszok és gyors összefoglalók
+2. **Letöltések** – magnet/.torrent, torrentlista, WD másolás, manuális törlés
+3. **Smart Life** – Tuya eszközök, klíma, szenzorok, kapcsolók, jelenetek
+4. **Hálózat** – fizikai topológia + élő Bridge mérések
+5. **Nyomtató** – KD20 USB Print Server
+6. **Beállítások** – automatikus másolás, célmappa, rendszerállapot
 
+A kiválasztott tab URL hash-ben marad meg (`#downloads`, `#smart`, `#network` stb.), ezért frissítés után is ugyanoda tér vissza a PWA.
 
-### Torrent
+### UI/UX javítás
 
-- manuális **Törlés** minden torrentnél
-- két külön, megerősítést igénylő művelet:
-  - csak a torrent eltávolítása a Transmissionből, a KD20 fájlok megtartásával
-  - torrent + KD20 helyi fájlok törlése
-- a WD My Cloudra már átmásolt példányt egyik törlés sem érinti
-- seedelési állapot megjelenítése
+- Smart Life kártyák nem csúsznak egymásra.
+- Hosszú eszköznevek maximum két sorosak.
+- A vezérlők saját, stabil action area-t kaptak.
+- Auto-fit grid desktopon, tableten és mobilon.
+- Mobilon minden kapcsoló, input és gomb teljes szélességen, törés nélkül jelenik meg.
+- Smart Life kategóriaszűrők: Összes, Kapcsoló, Szenzor, Klíma, Világítás, Kapu, Eszköz.
+- Szenzorok olvasási nézetben maradnak; célhőmérséklet csak klímán jelenik meg.
+- `battery_state=high/middle/low` értékek is értelmezett akkumulátorszintként jelennek meg.
 
-### Render / tartósság
+### Valódi otthoni hálózati topológia
 
-- Bridge felhős polling alapérték: **30 mp**
-- Render bridge-stale ablak: **90 mp**
-- a HomeHub tartós állapotának WD-s backupja:
-  - `/DataVolume/homehub/server-state.json`
-- a Bridge minden sikeres szinkron után elmenti a szerver beállításait, másolási állapotait és parancsállapotát
-- Render restart/deploy után a WD visszatölti a tartós állapotot
-- Render kiesése alatt a már ismert automatikus KD20 → WD másolási beállítás helyben tovább működik
-- az AutoCopy saját állapota továbbra is:
-  - `/DataVolume/homehub/autocopy-state.json`
-
-### Hálózat
-
-- az online állapot már nem kizárólag a webadmin TCP portjától függ
-- ping + ARP + TCP admin-port ellenőrzés
-- külön `online` és `adminOnline` állapot
-- az Archer C6 akkor is online-ként jelenhet meg, ha a webadmin nem válaszol
-- RE220 / RE315 MAC → IP felderítéshez sűrűbb ARP warm-up
-
-### Smart Life
-
-- szenzorokon nincs több értelmetlen hőmérséklet-beállító mező
-- szigorúbb akkumulátor százalék felismerés
-- külön szenzor, kapcsoló, világítás, klíma, kapu és általános eszköz kártya
-- klímánál dinamikus:
-  - be/ki
-  - célhőmérséklet
-  - üzemmód
-  - ventilátorfokozat, ha a Tuya specifikáció publikálja
-- Tap-to-Run jelenetek lekérése a Smart Home `home` scene API-val, voice API fallbackkel
-- kapu/zár jellegű műveletek továbbra is kézi megerősítést kérnek
-
-### Mobil / PWA
-
-- kisebb kijelzőn újratördelt Smart Life és torrent vezérlők
-- törlési műveletek külön biztonsági modalban
-
-## Render environment
+A Hálózat tab a jelenlegi fizikai struktúrát rajzolja ki:
 
 ```text
-APP_PASSWORD=...
-BRIDGE_TOKEN=...
-COOKIE_SECRET=...
-TUYA_ACCESS_ID=...
-TUYA_ACCESS_SECRET=...
+Internet
+└── Technicolor FGA2233
+    ├── Wi-Fi: krankovics2
+    │   └── Krankovics-MBP
+    ├── Port 1
+    │   └── DESKTOP-E6K3SEK
+    ├── Port 2
+    │   └── TL-SG108E
+    │       ├── DorkaPC
+    │       ├── D-Link GO-SW-5G
+    │       │   └── TP-Link LiteWave LS105G
+    │       │       └── davidgaming
+    │       └── Archer C6
+    │           └── Wi-Fi / mesh: krankovics
+    │               ├── RE220
+    │               ├── RE315 #1
+    │               └── RE315 #2
+    ├── Port 3
+    │   └── KD20 / oldnas
+    └── Port 4
+        └── WD My Cloud
+```
+
+A D-Link GO-SW-5G és TP-Link LiteWave LS105G nem menedzselhető, ezért passzív topológiai elemként látszanak. A mögöttük lévő gépek élő státusza külön mérhető.
+
+### Több élő hálózati eszköz a Bridge-ben
+
+A v0.10 Bridge a régi `/DataVolume/homehub/config.json` lecserélése nélkül automatikusan hozzáadja, ha még hiányoznak:
+
+- TL-SG108E – `192.168.1.49`
+- KD20 / oldnas – `192.168.1.12`
+- WD My Cloud – `192.168.1.180`
+- DESKTOP-E6K3SEK – `192.168.1.25`
+- DorkaPC – `192.168.1.210`
+- davidgaming – `192.168.1.138`
+- Krankovics-MBP – `192.168.1.114`
+
+A korábbi Technicolor, Archer C6, RE220 és 2× RE315 beállítások megmaradnak.
+
+## Megmaradt funkciók
+
+- Transmission RPC a KD20-on
+- magnet link és `.torrent` feltöltés
+- torrentlista, sebesség, ETA
+- manuális WD-re másolás
+- automatikus KD20 → WD másolás
+- másolási progressz, sebesség, ETA
+- manuális torrenttörlés:
+  - csak torrent eltávolítása
+  - torrent + KD20 fájlok törlése
+- WD-re másolt példány törlésnél érintetlen marad
+- külön Bridge heartbeat
+- WD-n tartós HomeHub állapot
+- Render kiesésétől független helyi automatikus másolás
+- Smart Life/Tuya vezérlés
+- kapu jellegű műveletek megerősítéssel
+- KD20 USB nyomtatómegosztás
+- PWA
+
+## Render frissítés
+
+A v0.10.0 teljes tartalmával frissítsd ugyanazt a Git repositoryt, amelyről a HomeHub Render service deployol.
+
+A korábbi Environment változók maradnak, többek között:
+
+```text
+APP_PASSWORD
+BRIDGE_TOKEN
+COOKIE_SECRET
+TUYA_ACCESS_ID
+TUYA_ACCESS_SECRET
 TUYA_API_ENDPOINT=https://openapi.tuyaeu.com
 TUYA_REFRESH_MS=15000
 BRIDGE_STALE_MS=90000
 ```
 
-`TUYA_ACCESS_SECRET`-et ne tedd Gitbe.
+## WD Bridge frissítés
 
-## WD Bridge frissítés v0.9.2-re
-
-Windows PowerShell, a kicsomagolt `bridge` mappában:
+Windows PowerShellből, a kicsomagolt `bridge` könyvtárban:
 
 ```powershell
-scp -O -o HostKeyAlgorithms=+ssh-rsa .\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v09
+scp -O -o HostKeyAlgorithms=+ssh-rsa .\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v010
+```
+
+Belépés:
+
+```powershell
 ssh -o HostKeyAlgorithms=+ssh-rsa root@192.168.1.180
 ```
 
-WD My Cloud SSH-ban:
+A WD-n egyenként:
 
-```sh
+```bash
 /etc/init.d/homehub-bridge stop
 rm -f /DataVolume/homehub/homehub-bridge
-cp /DataVolume/homehub-bridge-v09 /DataVolume/homehub/homehub-bridge
+cp /DataVolume/homehub-bridge-v010 /DataVolume/homehub/homehub-bridge
 chmod 755 /DataVolume/homehub/homehub-bridge
 /DataVolume/homehub/homehub-bridge -version
 /etc/init.d/homehub-bridge start
 /etc/init.d/homehub-bridge status
 ```
 
-Várt verzió:
+Elvárt verzió:
 
 ```text
-homehub-bridge 0.9.2 linux/arm
+homehub-bridge 0.10.0 linux/arm
 ```
 
-A régi `config.json` használható. Ha `pollSeconds` még `3`, a v0.9 automatikusan 30 másodpercre migrálja futás közben. Új telepítésnél a példa config már 30-at tartalmaz.
+A meglévő `/DataVolume/homehub/config.json` fájlt **nem kell lecserélni**.
 
-## Tartós állapot ellenőrzése
+## Ellenőrzés
 
-Az első sikeres v0.9 szerver + Bridge szinkron után:
-
-```sh
-ls -lh /DataVolume/homehub/server-state.json
-cat /DataVolume/homehub/server-state.json
+```bash
+/etc/init.d/homehub-bridge status
+tail -n 40 /DataVolume/homehub/homehub.log
 ```
 
-A fájlban nem tárolunk Smart Life secretet vagy HomeHub belépési jelszót. A Bridge token a meglévő `config.json`-ban marad, 600-as jogosultsággal ajánlott.
+A HomeHub weben az új felső tabsor jelenik meg. A Hálózat tabon a topológia mellett az `Élő eszközállapot` blokkban a Bridge által felismert eszközök látszanak.
 
-## Build
+## Build ellenőrzés
 
-Bridge:
-
-```sh
-cd bridge
-go test ./...
-GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o bin/homehub-bridge-linux-armv7 ./cmd/homehub-bridge
-```
-
-Web/server:
-
-```sh
-npm install
-npm run build
-```
+- Bridge: `go test ./...` sikeres
+- ARMv7 Bridge újrafordítva, statikusan linkelt Linux/ARM EABI5 bináris
+- frontend és server TypeScript forrás szintaktikai ellenőrzése sikeres
