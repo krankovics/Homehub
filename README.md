@@ -1,102 +1,109 @@
-# HomeHub v0.10.0
+# HomeHub v0.11.0
 
 Otthoni vezérlőközpont a jelenlegi setuphoz: Shuttle OMNINAS KD20 + WD My Cloud + Technicolor/TP-Link hálózat + Smart Life/Tuya + USB nyomtató.
 
-## v0.10.0 újdonságok
+## v0.11.0 újdonságok
 
-### Új, tabos kezelőfelület
+### gatePRO részletes kapuvezérlés
 
-A korábbi hosszú egyoldalas dashboard helyett hat külön nézet van:
+A Smart Life tabon a `gatePRO` saját vezérlőpanelt kap. A HomeHub a Tuya által ténylegesen publikált funkciókat keresi, ezért csak támogatott művelet aktív.
 
-1. **Áttekintés** – fő státuszok és gyors összefoglalók
-2. **Letöltések** – magnet/.torrent, torrentlista, WD másolás, manuális törlés
-3. **Smart Life** – Tuya eszközök, klíma, szenzorok, kapcsolók, jelenetek
-4. **Hálózat** – fizikai topológia + élő Bridge mérések
-5. **Nyomtató** – KD20 USB Print Server
-6. **Beállítások** – automatikus másolás, célmappa, rendszerállapot
+Tervezett/keresett műveletek:
 
-A kiválasztott tab URL hash-ben marad meg (`#downloads`, `#smart`, `#network` stb.), ezért frissítés után is ugyanoda tér vissza a PWA.
+- Start
+- Személybejáró
+- Stop
+- Nyitás
+- Zárás
+- Világítás
+- kapuállapot
+- figyelmeztetés / alarm / fault állapot
 
-### UI/UX javítás
+A kapu mozgatását végző műveleteknél külön megerősítés szükséges. A világítás kapcsolása nem kap felesleges megerősítést.
 
-- Smart Life kártyák nem csúsznak egymásra.
-- Hosszú eszköznevek maximum két sorosak.
-- A vezérlők saját, stabil action area-t kaptak.
-- Auto-fit grid desktopon, tableten és mobilon.
-- Mobilon minden kapcsoló, input és gomb teljes szélességen, törés nélkül jelenik meg.
-- Smart Life kategóriaszűrők: Összes, Kapcsoló, Szenzor, Klíma, Világítás, Kapu, Eszköz.
-- Szenzorok olvasási nézetben maradnak; célhőmérséklet csak klímán jelenik meg.
-- `battery_state=high/middle/low` értékek is értelmezett akkumulátorszintként jelennek meg.
+### feyree Portable charger részletes EV-töltőpanel
 
-### Valódi otthoni hálózati topológia
+A `feyree Portable charger` automatikusan Autótöltő kategóriába kerül. A részletes panel a Tuya status/functions adatok alapján jeleníti meg, ami ténylegesen elérhető:
 
-A Hálózat tab a jelenlegi fizikai struktúrát rajzolja ki:
+- hőmérséklet
+- feszültség
+- áramerősség
+- teljesítmény
+- energia
+- CP állapot
+- töltés indítása / leállítása
+- maximális áramerősség
+- késleltetett indítás
+- töltési idő
+
+Az enum és numerikus Tuya beállításokat külön kezeli: ha a töltő például csak konkrét amperértékeket enged, azok jelennek meg választóként.
+
+### Javított hálózati topológia
+
+A Port 2 ág új, biztonságos tördelést kapott, hogy a kártyák és vonalak ne csússzanak egymásra. A hálózati switch CSS osztályai külön namespace-t kaptak, így nem öröklik a Smart Life ki/be kapcsoló stílusát.
 
 ```text
-Internet
-└── Technicolor FGA2233
-    ├── Wi-Fi: krankovics2
-    │   └── Krankovics-MBP
-    ├── Port 1
-    │   └── DESKTOP-E6K3SEK
-    ├── Port 2
-    │   └── TL-SG108E
-    │       ├── DorkaPC
-    │       ├── D-Link GO-SW-5G
-    │       │   └── TP-Link LiteWave LS105G
-    │       │       └── davidgaming
-    │       └── Archer C6
-    │           └── Wi-Fi / mesh: krankovics
-    │               ├── RE220
-    │               ├── RE315 #1
-    │               └── RE315 #2
-    ├── Port 3
-    │   └── KD20 / oldnas
-    └── Port 4
-        └── WD My Cloud
+Technicolor FGA2233
+├── Wi-Fi: krankovics2
+│   └── Krankovics-MBP
+├── Port 1
+│   └── DESKTOP-E6K3SEK
+├── Port 2
+│   └── TL-SG108E
+│       ├── DorkaPC
+│       ├── D-Link GO-SW-5G
+│       │   └── TP-Link LiteWave LS105G
+│       │       └── davidgaming
+│       └── Archer C6
+│           └── Wi-Fi / mesh: krankovics
+│               ├── RE220
+│               ├── RE315 #1  (...:93:86)
+│               └── RE315 #2  (...:fe:ce)
+├── Port 3
+│   └── KD20 / oldnas
+└── Port 4
+    └── WD My Cloud
 ```
 
-A D-Link GO-SW-5G és TP-Link LiteWave LS105G nem menedzselhető, ezért passzív topológiai elemként látszanak. A mögöttük lévő gépek élő státusza külön mérhető.
+### Wi-Fi kliensnézet
 
-### Több élő hálózati eszköz a Bridge-ben
+A v0.11 a TP-Link Tetherből azonosított klienslistát külön panelen is megjeleníti, két csoporttal:
 
-A v0.10 Bridge a régi `/DataVolume/homehub/config.json` lecserélése nélkül automatikusan hozzáadja, ha még hiányoznak:
+- Archer C6 / `krankovics`: 19 klienses legutóbbi pillanatkép
+- RE315 #1 (`dc:62:79:dd:93:86`): 8 klienses legutóbbi pillanatkép
 
-- TL-SG108E – `192.168.1.49`
-- KD20 / oldnas – `192.168.1.12`
-- WD My Cloud – `192.168.1.180`
-- DESKTOP-E6K3SEK – `192.168.1.25`
-- DorkaPC – `192.168.1.210`
-- davidgaming – `192.168.1.138`
-- Krankovics-MBP – `192.168.1.114`
+A lista többek között az ESP, `lwip0`, `wlan0`, Xiaomi vacuum, Edina A34, iPhone, Watch és mesh node neveket tartalmazza. Ez a v0.11-ben még **Tetherből felvett pillanatkép**, nem élő Archer API-lekérdezés. A felület ezt egyértelműen jelöli.
 
-A korábbi Technicolor, Archer C6, RE220 és 2× RE315 beállítások megmaradnak.
+### Mobil és desktop UI
+
+- gatePRO akciók reszponzív 3/2/1 oszlopos gridben
+- EV töltő mérőszámok külön panelen
+- topológia desktopon több hasáb, tableten és mobilon függőleges fa
+- hosszú switch- és kliensnevek nem csúsznak össze
+- Wi-Fi kliens-chipek automatikusan törnek
 
 ## Megmaradt funkciók
 
+- tabos PWA: Áttekintés / Letöltések / Smart Life / Hálózat / Nyomtató / Beállítások
 - Transmission RPC a KD20-on
 - magnet link és `.torrent` feltöltés
 - torrentlista, sebesség, ETA
 - manuális WD-re másolás
 - automatikus KD20 → WD másolás
 - másolási progressz, sebesség, ETA
-- manuális torrenttörlés:
-  - csak torrent eltávolítása
-  - torrent + KD20 fájlok törlése
+- manuális torrenttörlés két móddal
 - WD-re másolt példány törlésnél érintetlen marad
 - külön Bridge heartbeat
 - WD-n tartós HomeHub állapot
 - Render kiesésétől független helyi automatikus másolás
-- Smart Life/Tuya vezérlés
-- kapu jellegű műveletek megerősítéssel
+- Smart Life/Tuya vezérlés és jelenetek
 - KD20 USB nyomtatómegosztás
-- PWA
 
 ## Render frissítés
 
-A v0.10.0 teljes tartalmával frissítsd ugyanazt a Git repositoryt, amelyről a HomeHub Render service deployol.
+A v0.11.0 teljes tartalmával frissítsd ugyanazt a Git repositoryt, amelyről a HomeHub Render service deployol.
 
-A korábbi Environment változók maradnak, többek között:
+A korábbi Environment változók maradnak:
 
 ```text
 APP_PASSWORD
@@ -111,10 +118,12 @@ BRIDGE_STALE_MS=90000
 
 ## WD Bridge frissítés
 
+A v0.11 frontend/server együttműködik a v0.10 Bridge-dzsel is. A csomagban ennek ellenére friss, `0.11.0` ARMv7 Bridge is található.
+
 Windows PowerShellből, a kicsomagolt `bridge` könyvtárban:
 
 ```powershell
-scp -O -o HostKeyAlgorithms=+ssh-rsa .\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v010
+scp -O -o HostKeyAlgorithms=+ssh-rsa .\bin\homehub-bridge-linux-armv7 root@192.168.1.180:/DataVolume/homehub-bridge-v011
 ```
 
 Belépés:
@@ -128,7 +137,7 @@ A WD-n egyenként:
 ```bash
 /etc/init.d/homehub-bridge stop
 rm -f /DataVolume/homehub/homehub-bridge
-cp /DataVolume/homehub-bridge-v010 /DataVolume/homehub/homehub-bridge
+cp /DataVolume/homehub-bridge-v011 /DataVolume/homehub/homehub-bridge
 chmod 755 /DataVolume/homehub/homehub-bridge
 /DataVolume/homehub/homehub-bridge -version
 /etc/init.d/homehub-bridge start
@@ -138,10 +147,10 @@ chmod 755 /DataVolume/homehub/homehub-bridge
 Elvárt verzió:
 
 ```text
-homehub-bridge 0.10.0 linux/arm
+homehub-bridge 0.11.0 linux/arm
 ```
 
-A meglévő `/DataVolume/homehub/config.json` fájlt **nem kell lecserélni**.
+A meglévő `/DataVolume/homehub/config.json` fájlt nem kell lecserélni.
 
 ## Ellenőrzés
 
@@ -150,10 +159,11 @@ A meglévő `/DataVolume/homehub/config.json` fájlt **nem kell lecserélni**.
 tail -n 40 /DataVolume/homehub/homehub.log
 ```
 
-A HomeHub weben az új felső tabsor jelenik meg. A Hálózat tabon a topológia mellett az `Élő eszközállapot` blokkban a Bridge által felismert eszközök látszanak.
+A Smart Life tabon a gatePRO és feyree kártyán megjelenik a részletes vezérlés gomb. A Hálózat tabon a javított topológia alatt külön Wi-Fi kliens pillanatkép található.
 
 ## Build ellenőrzés
 
 - Bridge: `go test ./...` sikeres
 - ARMv7 Bridge újrafordítva, statikusan linkelt Linux/ARM EABI5 bináris
-- frontend és server TypeScript forrás szintaktikai ellenőrzése sikeres
+- frontend TSX szintaktikai transzpiláció: sikeres
+- Renderen a teljes `npm run build` fut le a tényleges React/Node függőségekkel

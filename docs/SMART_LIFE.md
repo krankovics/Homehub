@@ -37,3 +37,9 @@ A HomeHub először a Smart Home Scene API-t használja:
 Ha a device-listában nincs `home_id`, a tokenhez tartozó `uid` alapján lekéri a home-listát. Végső fallbackként megmarad a korábbi voice scene API.
 
 Kapu, garázs, ajtó, lock/zár nevű jelenetek és eszközök kézi megerősítést kérnek.
+
+## v0.11 speciális eszközpanelek
+
+- `gatePRO`: dinamikus Start / Stop / Személybejáró / Nyitás / Zárás / Világítás műveletek, Tuya functions alapján.
+- `feyree Portable charger`: EV-töltő panel feszültség, áram, teljesítmény, energia, CP és beállítható current/delay/time mezőkkel.
+- A funkciók nincsenek vakon hardcode-olva egyetlen DP ID-ra; code-pattern + specification alapján kerülnek feloldásra.

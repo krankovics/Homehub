@@ -37,3 +37,9 @@ Technicolor FGA2233
 | krankovics-mbp | Krankovics-MBP | 192.168.1.114 | c4:b3:01:c5:0b:8d |
 
 A D-Link GO-SW-5G és TP-Link LiteWave LS105G unmanaged switchek, ezért a Bridge nem tud tőlük saját státuszt vagy portadatot lekérni. A topológiai nézetben ettől függetlenül megjelennek.
+
+## v0.11 Wi-Fi kliens pillanatkép
+
+A Hálózat tabon a Tetherből felvett legutóbbi klienslista is megjelenik. Az Archer C6 alatt 19, a `dc:62:79:dd:93:86` MAC-végű RE315 #1 alatt 8 kliens szerepel a referencia pillanatképben. Ez még nem élő Archer/Tether API adatforrás; a UI `Pillanatkép` jelölést használ.
+
+A topológia switch node-jai `kind-network-switch` CSS namespace-t használnak, így nem ütköznek a Smart Life `.switch` vezérlő stílusával.
