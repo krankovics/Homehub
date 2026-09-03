@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: homehub
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: BRIDGE_TOKEN
+        sync: false
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: DATA_FILE
+        value: /tmp/homehub/state.json
+      - key: BRIDGE_STALE_MS
+        value: "15000"

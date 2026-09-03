@@ -1,0 +1,28 @@
+{
+  "bridgeId": "home-1",
+  "serverUrl": "https://YOUR-HOMEHUB.onrender.com",
+  "token": "CHANGE-ME-SAME-AS-BRIDGE_TOKEN",
+  "serverTlsInsecure": false,
+  "pollSeconds": 3,
+  "kd20": {
+    "rpcUrl": "http://192.168.1.12:9091/transmission/rpc",
+    "username": "",
+    "password": "",
+    "smbHost": "192.168.1.12",
+    "smbUser": "guest",
+    "smbPassword": "",
+    "smbShare": "disk",
+    "smbMount": "/tmp/homehub-kd20",
+    "smbBase": "contents",
+    "smbOptions": "vers=1.0,sec=ntlm,nounix"
+  },
+  "wd": {
+    "mediaRoot": "/DataVolume/shares/Public",
+    "reserveBytes": 10737418240
+  },
+  "autoCopy": {
+    "enabled": false,
+    "destination": "Filmek",
+    "stateFile": "/DataVolume/homehub/autocopy-state.json"
+  }
+}

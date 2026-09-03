@@ -1,0 +1,12 @@
+services:
+  homehub:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: 8787
+      BRIDGE_TOKEN: change-me-long-random-token
+      DATA_FILE: /app/data/state.json
+      WEB_DIST: /app/web/dist
+    volumes:
+      - ./data:/app/data
