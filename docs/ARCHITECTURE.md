@@ -19,3 +19,11 @@ A HomeHub szerver nem próbál közvetlenül belépni a privát 192.168.1.x hál
 A szerver snapshot érkezésekor figyeli a `percentDone == 1` torrenteket. Ha még nincs hozzá copy record, egy `torrent.copyToWd` parancsot tesz sorba. A bridge a Transmissionből lekéri a torrent fájllistáját, SMB-n kiolvassa a KD20-ról, és a WD célmappába másolja.
 
 A forrás soha nem törlődik automatikusan.
+
+## v0.7 Copy progress
+
+A Bridge másolás közben 2 másodpercenként progress eventet küld a cloud API-nak. A Render csak metaadatot kap (byte számlálók, sebesség, ETA, fájlnév); a médiafájl továbbra is kizárólag a helyi KD20 → WD LAN útvonalon mozog.
+
+## Printer adapter
+
+A v0.7 printer adapter nem proxyzza a print jobokat a felhőn keresztül. A KD20 gyári USB Print Serverét monitorozza helyi TCP probe-okkal, és a PWA-ban megjeleníti a setup shortcutot/statuszt.

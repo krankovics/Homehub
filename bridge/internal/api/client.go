@@ -70,6 +70,10 @@ func (c *Client) Commands(bridgeID string) ([]Command, error) {
 	err := c.do(http.MethodGet, "/api/bridge/commands?bridgeId="+url.QueryEscape(bridgeID), nil, &x)
 	return x, err
 }
+
+func (c *Client) Progress(id string, p any) error {
+	return c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/progress", p, nil)
+}
 func (c *Client) Complete(id string, ok bool, msg string) error {
 	return c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/complete", map[string]any{"ok": ok, "message": msg}, nil)
 }

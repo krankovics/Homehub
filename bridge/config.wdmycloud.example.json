@@ -18,11 +18,91 @@
   },
   "wd": {
     "mediaRoot": "/DataVolume/shares/Public",
-    "reserveBytes": 10737418240
+    "reserveBytes": 10737418240,
+    "owner": "nobody",
+    "group": "share",
+    "dirMode": "0775",
+    "fileMode": "0664"
   },
   "autoCopy": {
     "enabled": false,
     "destination": "Filmek",
     "stateFile": "/DataVolume/homehub/autocopy-state.json"
+  },
+  "printer": {
+    "enabled": true,
+    "host": "192.168.1.12",
+    "adminUrl": "http://192.168.1.12",
+    "probePorts": [
+      9100,
+      515,
+      631
+    ]
+  },
+  "network": {
+    "enabled": true,
+    "subnet": "192.168.1.0/24",
+    "devices": [
+      {
+        "id": "technicolor-fga2233",
+        "name": "Technicolor FGA2233",
+        "kind": "gateway",
+        "ip": "192.168.1.1",
+        "mac": "",
+        "adminUrl": "http://192.168.1.1",
+        "probePorts": [
+          80,
+          443
+        ]
+      },
+      {
+        "id": "archer-c6",
+        "name": "Archer C6",
+        "kind": "router",
+        "ip": "192.168.1.129",
+        "mac": "5C-62-8B-95-64-EA",
+        "adminUrl": "http://192.168.1.129",
+        "probePorts": [
+          80,
+          443
+        ]
+      },
+      {
+        "id": "re220",
+        "name": "TP-Link RE220",
+        "kind": "extender",
+        "ip": "",
+        "mac": "B4-B0-24-EF-3C-12",
+        "adminUrl": "",
+        "probePorts": [
+          80,
+          443
+        ]
+      },
+      {
+        "id": "re315-1",
+        "name": "TP-Link RE315 #1",
+        "kind": "extender",
+        "ip": "",
+        "mac": "DC-62-79-DD-93-86",
+        "adminUrl": "",
+        "probePorts": [
+          80,
+          443
+        ]
+      },
+      {
+        "id": "re315-2",
+        "name": "TP-Link RE315 #2",
+        "kind": "extender",
+        "ip": "",
+        "mac": "0C-EF-15-1B-FE-CE",
+        "adminUrl": "",
+        "probePorts": [
+          80,
+          443
+        ]
+      }
+    ]
   }
 }

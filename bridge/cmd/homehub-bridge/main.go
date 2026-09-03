@@ -12,10 +12,12 @@ import (
 	"homehub/bridge/internal/api"
 	"homehub/bridge/internal/config"
 	"homehub/bridge/internal/copyjob"
+	"homehub/bridge/internal/network"
+	"homehub/bridge/internal/printer"
 	"homehub/bridge/internal/transmission"
 )
 
-const version = "0.5.0"
+const version = "0.8.0"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
@@ -31,6 +33,8 @@ type snapshot struct {
 		TotalBytes uint64 `json:"totalBytes"`
 		MediaRoot  string `json:"mediaRoot"`
 	} `json:"wd"`
+	Printer printer.Status   `json:"printer"`
+	Network []network.Status `json:"network,omitempty"`
 }
 
 func fsStats(path string) (free, total uint64, ok bool) {
@@ -83,7 +87,7 @@ func main() {
 		if t.PercentDone < 1 {
 			log.Fatalf("torrent %d is not complete (%.1f%%)", t.ID, t.PercentDone*100)
 		}
-		msg, err := copyjob.Run(cfg, t, dest)
+		msg, err := copyjob.Run(cfg, t, dest, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -130,6 +134,11 @@ func runCheck(cfg config.Config, tr *transmission.Client) {
 	} else {
 		log.Printf("KD20 SMB OK: first entries: %v", names)
 	}
+	ps := printer.Probe(cfg)
+	log.Printf("KD20 PRINTER: configured=%t online=%t ports=%v protocol=%s", ps.Configured, ps.Online, ps.DetectedPorts, ps.Protocol)
+	for _, ns := range network.Probe(cfg) {
+		log.Printf("NETWORK: %s kind=%s online=%t ip=%s latency=%.1fms", ns.Name, ns.Kind, ns.Online, ns.IP, ns.LatencyMs)
+	}
 	if failed {
 		os.Exit(2)
 	}
@@ -175,7 +184,7 @@ func runAutoCopy(cfg config.Config, tr *transmission.Client) {
 			continue
 		}
 		log.Printf("AUTOCOPY START: id=%d name=%q -> %s", detail.ID, detail.Name, cfg.AutoCopy.Destination)
-		msg, err := copyjob.Run(cfg, detail, cfg.AutoCopy.Destination)
+		msg, err := copyjob.Run(cfg, detail, cfg.AutoCopy.Destination, nil)
 		if err != nil {
 			log.Printf("AUTOCOPY ERROR id=%d: %v", detail.ID, err)
 			continue
@@ -208,6 +217,8 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 	}
 	s.WD.MediaRoot = cfg.WD.MediaRoot
 	s.WD.FreeBytes, s.WD.TotalBytes, s.WD.Online = fsStats(cfg.WD.MediaRoot)
+	s.Printer = printer.Probe(cfg)
+	s.Network = network.Probe(cfg)
 	if err := cloud.Snapshot(s); err != nil {
 		log.Printf("snapshot: %v", err)
 	}
@@ -217,14 +228,24 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 		return
 	}
 	for _, cmd := range cmds {
-		msg, ok := handle(cfg, tr, cmd)
+		log.Printf("COMMAND START id=%s type=%s", cmd.ID, cmd.Type)
+		msg, ok := handle(cfg, tr, cmd, func(p copyjob.Progress) {
+			if err := cloud.Progress(cmd.ID, p); err != nil {
+				log.Printf("progress id=%s: %v", cmd.ID, err)
+			}
+		})
+		if ok {
+			log.Printf("COMMAND OK id=%s type=%s: %s", cmd.ID, cmd.Type, msg)
+		} else {
+			log.Printf("COMMAND ERROR id=%s type=%s: %s", cmd.ID, cmd.Type, msg)
+		}
 		if err := cloud.Complete(cmd.ID, ok, msg); err != nil {
 			log.Printf("complete: %v", err)
 		}
 	}
 }
 
-func handle(cfg config.Config, tr *transmission.Client, cmd api.Command) (string, bool) {
+func handle(cfg config.Config, tr *transmission.Client, cmd api.Command, progress copyjob.ProgressFunc) (string, bool) {
 	switch cmd.Type {
 	case "torrent.addMagnet":
 		m, _ := cmd.Payload["magnet"].(string)
@@ -251,7 +272,7 @@ func handle(cfg config.Config, tr *transmission.Client, cmd api.Command) (string
 		if t.PercentDone < 1 {
 			return "torrent not complete", false
 		}
-		msg, err := copyjob.Run(cfg, t, dest)
+		msg, err := copyjob.Run(cfg, t, dest, progress)
 		if err != nil {
 			return err.Error(), false
 		}

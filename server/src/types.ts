@@ -10,6 +10,20 @@ export type Torrent = {
   downloadDir?: string;
 };
 
+export type PrinterStatus = {
+  configured: boolean;
+  online: boolean;
+  host: string;
+  adminUrl: string;
+  detectedPorts: number[];
+  protocol: string;
+  note: string;
+};
+
+export type NetworkStatus = {
+  id: string; name: string; kind: string; online: boolean; ip: string; mac: string; latencyMs: number; adminUrl: string; note: string;
+};
+
 export type Snapshot = {
   bridgeId: string;
   timestamp: string;
@@ -24,6 +38,8 @@ export type Snapshot = {
     totalBytes: number;
     mediaRoot: string;
   };
+  printer?: PrinterStatus;
+  network?: NetworkStatus[];
 };
 
 export type CommandType =
@@ -56,6 +72,15 @@ export type CopyRecord = {
   commandId: string;
   state: "queued" | "running" | "done" | "error";
   message?: string;
+  attempts?: number;
+  copiedBytes?: number;
+  totalBytes?: number;
+  currentFile?: string;
+  fileCopiedBytes?: number;
+  fileTotalBytes?: number;
+  speedBytesPerSec?: number;
+  etaSeconds?: number;
+  percent?: number;
   updatedAt: string;
 };
 

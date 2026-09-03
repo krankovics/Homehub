@@ -1,0 +1,21 @@
+{
+  "bridgeId": "home-budapest-1",
+  "serverUrl": "https://YOUR-HOMEHUB-SERVER.example.com",
+  "token": "same-long-random-token-as-BRIDGE_TOKEN",
+  "pollSeconds": 3,
+  "kd20": {
+    "rpcUrl": "http://192.168.1.12/transmission/rpc",
+    "username": "",
+    "password": "",
+    "smbHost": "192.168.1.12",
+    "smbUser": "admin",
+    "smbPassword": "",
+    "smbShare": "Public",
+    "smbMount": "/tmp/homehub-kd20",
+    "smbBase": "",
+    "smbOptions": ""
+  },
+  "wd": {
+    "mediaRoot": "/shares/Public"
+  }
+}

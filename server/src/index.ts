@@ -7,8 +7,9 @@ import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
 import type { Command, Snapshot } from "./types.js";
+import { TuyaService } from "./tuya.js";
 
-const VERSION = "0.5.0";
+const VERSION = "0.8.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -19,6 +20,12 @@ const WEB_DIST = path.resolve(process.env.WEB_DIST || "../web/dist");
 const SESSION_COOKIE = "homehub_session";
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const BRIDGE_STALE_MS = Number(process.env.BRIDGE_STALE_MS || 15_000);
+const TUYA_ACCESS_ID = process.env.TUYA_ACCESS_ID || "";
+const TUYA_ACCESS_SECRET = process.env.TUYA_ACCESS_SECRET || "";
+const TUYA_API_ENDPOINT = process.env.TUYA_API_ENDPOINT || "https://openapi.tuyaeu.com";
+const TUYA_REFRESH_MS = Number(process.env.TUYA_REFRESH_MS || 15_000);
+const tuya = new TuyaService(TUYA_API_ENDPOINT, TUYA_ACCESS_ID, TUYA_ACCESS_SECRET);
+
 
 if (!APP_PASSWORD || !COOKIE_SECRET || !BRIDGE_TOKEN) {
   throw new Error("APP_PASSWORD, COOKIE_SECRET and BRIDGE_TOKEN are required in production");
@@ -122,7 +129,12 @@ function autoQueueCopies(snapshot: Snapshot) {
 
   for (const t of snapshot.kd20.torrents) {
     if (t.percentDone < 1 || !t.hashString) continue;
-    if (s.copies[t.hashString]) continue;
+    const existing = s.copies[t.hashString];
+    if (existing && existing.state !== "error") continue;
+    if (existing?.state === "error") {
+      const last = new Date(existing.updatedAt).getTime();
+      if (Number.isFinite(last) && Date.now() - last < 30_000) continue;
+    }
 
     const cmd = enqueue(snapshot.bridgeId, "torrent.copyToWd", {
       torrentId: t.id,
@@ -130,6 +142,7 @@ function autoQueueCopies(snapshot: Snapshot) {
     });
 
     store.mutate((state) => {
+      const prev = state.copies[t.hashString];
       state.copies[t.hashString] = {
         torrentHash: t.hashString,
         torrentId: t.id,
@@ -137,6 +150,8 @@ function autoQueueCopies(snapshot: Snapshot) {
         destination: state.settings.autoCopyDestination,
         commandId: cmd.id,
         state: "queued",
+        message: prev?.state === "error" ? "Automatikus újrapróbálás" : undefined,
+        attempts: (prev?.attempts || 0) + 1,
         updatedAt: new Date().toISOString()
       };
     });
@@ -159,7 +174,8 @@ function publicState() {
       completedAt: c.completedAt,
       ok: c.ok,
       message: c.message
-    }))
+    })),
+    smartHome: tuya.state()
   };
 }
 
@@ -189,6 +205,29 @@ app.post("/api/auth/logout", userAuth, (req, res) => {
 });
 
 app.get("/api/state", userAuth, (_req, res) => res.json(publicState()));
+
+app.post("/api/smart-home/refresh", userAuth, async (_req, res) => {
+  await tuya.refresh();
+  res.json(tuya.state());
+});
+app.post("/api/smart-home/devices/:id/command", userAuth, async (req, res) => {
+  const parsed = z.object({ code: z.string().min(1).max(128), value: z.unknown(), confirm: z.boolean().optional() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const device = tuya.state().devices.find((d) => d.id === req.params.id);
+  if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
+  const dangerous = /kapu|gate|garage|garázs|door|lock|zár/i.test(`${device.name} ${device.productName}`);
+  if (dangerous && parsed.data.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
+  try { await tuya.command(device.id, parsed.data.code, parsed.data.value); res.json({ ok: true }); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/smart-home/scenes/:id/run", userAuth, async (req, res) => {
+  const scene = tuya.state().scenes.find((x) => x.id === req.params.id);
+  if (!scene) return res.status(404).json({ error: "tuya_scene_not_found" });
+  const dangerous = /kapu|gate|garage|garázs|door|lock|zár/i.test(scene.name);
+  if (dangerous && req.body?.confirm !== true) return res.status(409).json({ error: "confirmation_required" });
+  try { await tuya.scene(scene.id); res.json({ ok: true }); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
 
 app.get("/api/settings", userAuth, (_req, res) => res.json(store.get().settings));
 app.put("/api/settings", userAuth, (req, res) => {
@@ -222,13 +261,48 @@ app.post("/api/torrents/file", userAuth, upload.single("torrent"), (req, res) =>
 });
 
 app.post("/api/torrents/:id/copy", userAuth, (req, res) => {
-  const bridgeId = store.get().snapshot?.bridgeId;
+  const current = store.get();
+  const bridgeId = current.snapshot?.bridgeId;
   if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
   const torrentId = Number(req.params.id);
-  const destination = String(req.body?.destination || store.get().settings.autoCopyDestination).trim();
+  const destination = String(req.body?.destination || current.settings.autoCopyDestination).trim();
   if (!Number.isInteger(torrentId)) return res.status(400).json({ error: "invalid_torrent_id" });
   if (!destination || destination.includes("..") || destination.startsWith("/")) return res.status(400).json({ error: "invalid_destination" });
-  res.status(202).json(enqueue(bridgeId, "torrent.copyToWd", { torrentId, destination }));
+  const torrent = current.snapshot?.kd20.torrents.find((t) => t.id === torrentId);
+  if (!torrent || !torrent.hashString) return res.status(404).json({ error: "torrent_not_found" });
+  if (torrent.percentDone < 1) return res.status(409).json({ error: "torrent_not_complete" });
+  const cmd = enqueue(bridgeId, "torrent.copyToWd", { torrentId, destination });
+  store.mutate((state) => {
+    const prev = state.copies[torrent.hashString];
+    state.copies[torrent.hashString] = {
+      torrentHash: torrent.hashString, torrentId, torrentName: torrent.name, destination, commandId: cmd.id,
+      state: "queued", attempts: (prev?.attempts || 0) + 1, updatedAt: new Date().toISOString()
+    };
+  });
+  res.status(202).json(cmd);
+});
+
+app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
+  const current = store.get();
+  const bridgeId = current.snapshot?.bridgeId;
+  if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
+  const hash = req.params.hash;
+  const copy = current.copies[hash];
+  const torrent = current.snapshot?.kd20.torrents.find((t) => t.hashString === hash);
+  if (!copy || !torrent) return res.status(404).json({ error: "copy_not_found" });
+  if (torrent.percentDone < 1) return res.status(409).json({ error: "torrent_not_complete" });
+  const cmd = enqueue(bridgeId, "torrent.copyToWd", { torrentId: torrent.id, destination: copy.destination });
+  store.mutate((state) => {
+    const target = state.copies[hash];
+    if (target) {
+      target.commandId = cmd.id;
+      target.state = "queued";
+      target.message = undefined;
+      target.attempts = (target.attempts || 0) + 1;
+      target.updatedAt = new Date().toISOString();
+    }
+  });
+  res.status(202).json(cmd);
 });
 
 app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
@@ -255,7 +329,19 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
       freeBytes: z.number(),
       totalBytes: z.number(),
       mediaRoot: z.string()
-    })
+    }),
+    printer: z.object({
+      configured: z.boolean(),
+      online: z.boolean(),
+      host: z.string(),
+      adminUrl: z.string(),
+      detectedPorts: z.array(z.number().int()),
+      protocol: z.string(),
+      note: z.string()
+    }).optional(),
+    network: z.array(z.object({
+      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), ip: z.string(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string()
+    })).optional()
   }).safeParse(req.body);
 
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -291,6 +377,36 @@ app.get("/api/bridge/commands", bridgeAuth, (req, res) => {
   res.json(commands);
 });
 
+app.post("/api/bridge/commands/:id/progress", bridgeAuth, (req, res) => {
+  const id = req.params.id;
+  const parsed = z.object({
+    copiedBytes: z.number().nonnegative(),
+    totalBytes: z.number().nonnegative(),
+    currentFile: z.string().max(2000).optional().default(""),
+    fileCopiedBytes: z.number().nonnegative().optional().default(0),
+    fileTotalBytes: z.number().nonnegative().optional().default(0),
+    speedBytesPerSec: z.number().nonnegative().optional().default(0),
+    etaSeconds: z.number().nonnegative().optional().default(0),
+    percent: z.number().min(0).max(1).optional().default(0)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  store.mutate((s) => {
+    const copy = Object.values(s.copies).find((x) => x.commandId === id);
+    if (!copy) return;
+    copy.state = "running";
+    copy.copiedBytes = parsed.data.copiedBytes;
+    copy.totalBytes = parsed.data.totalBytes;
+    copy.currentFile = parsed.data.currentFile;
+    copy.fileCopiedBytes = parsed.data.fileCopiedBytes;
+    copy.fileTotalBytes = parsed.data.fileTotalBytes;
+    copy.speedBytesPerSec = parsed.data.speedBytesPerSec;
+    copy.etaSeconds = parsed.data.etaSeconds;
+    copy.percent = parsed.data.percent;
+    copy.updatedAt = new Date().toISOString();
+  });
+  res.json({ ok: true });
+});
+
 app.post("/api/bridge/commands/:id/complete", bridgeAuth, (req, res) => {
   const id = req.params.id;
   const ok = Boolean(req.body?.ok);
@@ -307,6 +423,11 @@ app.post("/api/bridge/commands/:id/complete", bridgeAuth, (req, res) => {
     if (copy) {
       copy.state = ok ? "done" : "error";
       copy.message = message;
+      if (ok) {
+        copy.percent = 1;
+        if (copy.totalBytes !== undefined) copy.copiedBytes = copy.totalBytes;
+        copy.etaSeconds = 0;
+      }
       copy.updatedAt = new Date().toISOString();
     }
   });
@@ -316,6 +437,11 @@ app.post("/api/bridge/commands/:id/complete", bridgeAuth, (req, res) => {
 if (fs.existsSync(WEB_DIST)) {
   app.use(express.static(WEB_DIST, { maxAge: isProd ? "1h" : 0 }));
   app.use((_req, res) => res.sendFile(path.join(WEB_DIST, "index.html")));
+}
+
+if (tuya.state().configured) {
+  tuya.refresh().catch(() => {});
+  setInterval(() => tuya.refresh().catch(() => {}), TUYA_REFRESH_MS).unref();
 }
 
 app.listen(PORT, "0.0.0.0", () => {
