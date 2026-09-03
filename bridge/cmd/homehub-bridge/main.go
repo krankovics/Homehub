@@ -19,7 +19,7 @@ import (
 	"homehub/bridge/internal/transmission"
 )
 
-const version = "0.11.1"
+const version = "0.12.0"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`

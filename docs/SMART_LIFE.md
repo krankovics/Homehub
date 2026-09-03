@@ -1,4 +1,4 @@
-# Smart Life / Tuya v0.11.1
+# Smart Life / Tuya v0.12.0
 
 A HomeHub a Tuya Central Europe Cloud API-t használja.
 
@@ -15,7 +15,7 @@ A secret ne kerüljön Gitbe vagy a WD Bridge configjába.
 
 ## Control Instruction Mode
 
-A v0.11.1 három ismert termékprofilnál a Tuya **DP Instruction** kódjait használja. A Tuya Developer Platformon a Homehub Cloud Projectben ezeknél a termékeknél a `DP Instruction` mód legyen kiválasztva:
+A v0.12.0 három ismert termékprofilnál a Tuya **DP Instruction** kódjait használja. A Tuya Developer Platformon a Homehub Cloud Projectben ezeknél a termékeknél a `DP Instruction` mód legyen kiválasztva:
 
 - myGate / gatePRO
 - feyree Portable charger
@@ -111,7 +111,7 @@ A célhőmérséklet, mód, ventilátor és swing csak a Tuya API által publik�
 
 ## Szerveroldali DP-védelem
 
-A `/api/smart-home/devices/:id/command` végpont v0.11.1-től ellenőrzi, hogy a kért DP szerepel-e az adott eszköz publikált/ismert function listájában, és ahol van specification, validálja a Boolean, Enum és numerikus értékeket is.
+A `/api/smart-home/devices/:id/command` végpont v0.12.0-től ellenőrzi, hogy a kért DP szerepel-e az adott eszköz publikált/ismert function listájában, és ahol van specification, validálja a Boolean, Enum és numerikus értékeket is.
 
 Diagnosztikához bejelentkezés után elérhető:
 
