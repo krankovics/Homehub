@@ -1,3 +1,10 @@
+
+## v0.8.1 Render build hotfix
+
+- Javítva a TypeScript `TS18048` build hiba a Smart Life kártyánál.
+- A web kliens most biztonságos üres Smart Home állapotot használ addig is, amíg a `/api/state` még nem tartalmaz Tuya adatot.
+- A WD-n futó Bridge-et nem kell frissíteni: a 0.8.0 bridge kompatibilis ezzel a web/server hotfixszel.
+
 # HomeHub MVP v0.8
 
 PWA + Render API + WD My Cloud ARMv7 Bridge a jelenlegi otthoni setuphoz: Shuttle OMNINAS KD20, WD My Cloud, USB nyomtató, Technicolor/TP-Link hálózat és Smart Life/Tuya.

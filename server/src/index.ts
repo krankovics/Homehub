@@ -9,7 +9,7 @@ import { Store } from "./store.js";
 import type { Command, Snapshot } from "./types.js";
 import { TuyaService } from "./tuya.js";
 
-const VERSION = "0.8.0";
+const VERSION = "0.8.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
