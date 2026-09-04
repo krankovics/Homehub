@@ -14,7 +14,7 @@ import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 
-const VERSION = "0.20.0";
+const VERSION = "0.20.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
