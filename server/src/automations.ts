@@ -67,6 +67,10 @@ function compareState(actual: unknown, op: "eq" | "neq", expected: unknown) {
   return op === "eq" ? same : !same;
 }
 
+function operatorLabel(operator: string) {
+  return ({ gt: ">", gte: "≥", lt: "<", lte: "≤", eq: "=", neq: "≠" } as Record<string,string>)[operator] || operator;
+}
+
 export class AutomationEngine {
   private ticking = false;
   constructor(
@@ -158,12 +162,12 @@ export class AutomationEngine {
       const d = this.tuya.state().devices.find(x => x.id === trigger.deviceId);
       const value = d ? numericValue(d, trigger.code) : null;
       active = Boolean(d?.online && value !== null && compareNumber(value!, trigger.operator, trigger.value));
-      detail = d ? `${d.name}: ${trigger.code} = ${value ?? "nincs adat"}` : `Tuya eszköz nem található: ${trigger.deviceId}`;
+      detail = d ? `${d.name}: ${trigger.code} = ${value ?? "nincs adat"}; feltétel: ${operatorLabel(trigger.operator)} ${trigger.value}` : `Tuya eszköz nem található: ${trigger.deviceId}`;
     } else if (trigger.type === "tuya.state") {
       const d = this.tuya.state().devices.find(x => x.id === trigger.deviceId);
       const p = d?.status.find(x => x.code === trigger.code);
       active = Boolean(d?.online && p && compareState(p.value, trigger.operator, trigger.value));
-      detail = d ? `${d.name}: ${trigger.code} = ${String(p?.value ?? "nincs adat")}` : `Tuya eszköz nem található: ${trigger.deviceId}`;
+      detail = d ? `${d.name}: ${trigger.code} = ${String(p?.value ?? "nincs adat")}; feltétel: ${operatorLabel(trigger.operator)} ${String(trigger.value)}` : `Tuya eszköz nem található: ${trigger.deviceId}`;
     } else if (trigger.type === "network.online_window") {
       const n = (this.store.get().snapshot?.network || []).find(x => x.id === trigger.networkId);
       const local = fmtLocal(now, trigger.timezone || DEFAULT_TZ);
@@ -190,7 +194,18 @@ export class AutomationEngine {
     const forSeconds = "forSeconds" in trigger ? Math.max(0, Number(trigger.forSeconds || 0)) : 0;
     if (nowMs - since < forSeconds * 1000 || !this.cooldownOK(rule, nowMs)) return;
     this.updateRuntime(rule.id, { latched: true });
-    await this.execute(rule, { detail });
+    const durationDetail = forSeconds > 0 ? `${detail} · legalább ${forSeconds} másodpercig fennállt` : detail;
+    await this.execute(rule, { detail: durationDetail });
+  }
+
+  private actionSummary(action: AutomationAction) {
+    if (action.type === "vacuum.command") return `Porszívó: ${action.action}`;
+    if (action.type === "tuya.command") {
+      const d = this.tuya.state().devices.find(x => x.id === action.deviceId);
+      return `${d?.name || "Tuya eszköz"}: ${action.code} → ${String(action.value)}`;
+    }
+    if (action.type === "ai.summary") return "AI összefoglaló";
+    return `Értesítés: ${action.subject}`;
   }
 
   private render(template: string, rule: AutomationRule, detail: string) {
@@ -202,17 +217,36 @@ export class AutomationEngine {
 
   private async execute(rule: AutomationRule, context: { detail: string; network?: NetworkStatus[] }) {
     const failures: string[] = [];
+    const performed: string[] = [];
     for (const action of rule.actions) {
-      try { await this.executeAction(rule, action, context.detail); }
-      catch (err) { failures.push(`${action.type}: ${err instanceof Error ? err.message : String(err)}`); }
+      try { await this.executeAction(rule, action, context.detail); performed.push(this.actionSummary(action)); }
+      catch (err) { failures.push(`${this.actionSummary(action)}: ${err instanceof Error ? err.message : String(err)}`); }
     }
+    const firedAt = new Date().toISOString();
+    const reason = context.detail || "A szabály feltétele teljesült.";
+    const result = failures.length ? `${performed.length} akció sikeres, ${failures.length} hiba.` : `${performed.length} akció sikeresen végrehajtva.`;
+    const historyMessage = `${rule.name}: lefutott. Ok: ${reason}. Akció: ${performed.join("; ") || "nincs sikeres akció"}. Eredmény: ${result}`;
     this.store.mutate(s => {
-      const firedAt = new Date().toISOString();
       const target = s.automations.find(x => x.id === rule.id);
       if (target) target.lastTriggeredAt = firedAt;
-      pushHistory(s, { category: "automation", type: failures.length ? "automation.partial" : "automation.executed", entityId: rule.id, entityName: rule.name, message: `${rule.name}: automatizálás lefutott${failures.length ? ` · ${failures.length} hiba` : ""}.`, createdAt: firedAt, data: { detail: context.detail, failures } });
+      pushHistory(s, { category: "automation", type: failures.length ? "automation.partial" : "automation.executed", entityId: rule.id, entityName: rule.name, message: historyMessage, createdAt: firedAt, data: { reason, actions: performed, failures, result } });
     });
-    if (failures.length) await this.createAlert(rule, "HomeHub akcióhiba", `${context.detail}\n\n${failures.join("\n")}`, false);
+
+    const hasExplicitEmail = rule.actions.some(a => (a.type === "alert" || a.type === "ai.summary") && a.email !== false);
+    if (rule.notifyEmail !== false && !hasExplicitEmail) {
+      const lines = [
+        `Ok: ${reason}`,
+        "",
+        "Végrehajtott akció:",
+        performed.join("\n") || "—",
+        "",
+        `Eredmény: ${result}`
+      ];
+      if (failures.length) lines.push("", "Hibák:", failures.join("\n"));
+      await this.createAlert(rule, `HomeHub automatizálás: ${rule.name}`, lines.join("\n"), true);
+    } else if (failures.length) {
+      await this.createAlert(rule, "HomeHub akcióhiba", [`Ok: ${reason}`, "", failures.join("\n")].join("\n"), false);
+    }
   }
 
   private async executeAction(rule: AutomationRule, action: AutomationAction, detail: string) {

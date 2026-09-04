@@ -1,4 +1,4 @@
-const CACHE = "homehub-v0.20.1";
+const CACHE = "homehub-v0.21.0";
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.webmanifest"])).then(() => self.skipWaiting()));
 });

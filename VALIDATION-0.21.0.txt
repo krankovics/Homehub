@@ -1,0 +1,16 @@
+HomeHub v0.21.0 validation
+==========================
+
+Validated in the artifact build environment:
+
+[OK] server/src + web/src: TypeScript/TSX syntax transpilation across 10 source files, 0 syntax diagnostics.
+[OK] package.json, server/package.json, web/package.json and tsconfig JSON parsing.
+[OK] CSS delimiter balance after responsive/light-dark v0.21 overrides.
+[OK] v0.21 static feature assertions: scrypt user password handling, admin-only People mutation routes, menu permission UI, mobile navigation, notifyEmail rule option, reason/duration/action/result automation audit.
+[OK] Go bridge regression suite: `go test ./...` passed, including media/network/vault packages. Bridge source is unchanged functionally for this web/server release.
+[OK] Version markers: server health 0.21.0, npm workspace packages 0.21.0, PWA cache homehub-v0.21.0.
+[OK] Secret scan: no known household Wi-Fi password or concrete Tuya/SMTP secret was introduced; .env.example contains placeholders only.
+
+Build limitation:
+- The extracted source does not contain node_modules and the build container has no cached npm registry packages. `npm install --offline` therefore failed with ENOTCACHED for concurrently. A complete dependency-aware `npm run build` could not be executed here.
+- The Render Docker build performs a fresh `npm install` and is the final dependency/type/build verification after push.

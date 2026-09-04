@@ -305,7 +305,8 @@ export class AIService {
       enabled: true,
       trigger,
       actions,
-      cooldownSeconds: Math.max(0, Math.min(604800, Math.round(raw.cooldownSeconds || 300)))
+      cooldownSeconds: Math.max(0, Math.min(604800, Math.round(raw.cooldownSeconds || 300))),
+      notifyEmail: true
     } : null;
     this.validateDraft(draft, warnings);
     return { explanation: raw.explanation, draft: warnings.length ? (draft || null) : draft, valid: Boolean(draft) && !warnings.some(w => w.startsWith("HIBA:")), warnings, usage: usage(data) };

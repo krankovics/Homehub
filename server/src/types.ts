@@ -129,6 +129,17 @@ export type VaultStatus = {
 };
 
 
+export type MenuPermission = "overview" | "people" | "timeline" | "downloads" | "media" | "smart" | "actions" | "ai" | "network" | "credentials" | "printer" | "settings";
+
+export type PersonAuth = {
+  enabled: boolean;
+  loginName: string;
+  passwordSalt?: string;
+  passwordHash?: string;
+  permissions: MenuPermission[];
+  forcePasswordChange?: boolean;
+};
+
 export type PersonDeviceRole = "primary" | "secondary" | "stationary";
 
 export type PersonDeviceLink = {
@@ -144,6 +155,7 @@ export type PersonProfile = {
   role?: string;
   avatarMime?: string;
   avatarBase64?: string;
+  auth?: PersonAuth;
   devices: PersonDeviceLink[];
   createdAt: string;
   updatedAt: string;
@@ -267,6 +279,7 @@ export type AutomationRule = {
   trigger: AutomationTrigger;
   actions: AutomationAction[];
   cooldownSeconds: number;
+  notifyEmail?: boolean;
   createdAt: string;
   updatedAt: string;
   lastTriggeredAt?: string;

@@ -6,7 +6,7 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile, DeviceIdentityOverride } from "./types.js";
+import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile, DeviceIdentityOverride, MenuPermission } from "./types.js";
 import { TuyaService, type TuyaDevice, type TuyaReportLog } from "./tuya.js";
 import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
@@ -14,7 +14,7 @@ import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 
-const VERSION = "0.20.1";
+const VERSION = "0.21.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -73,44 +73,81 @@ function cookieMap(req: express.Request) {
   return out;
 }
 
-function sessionSignature(exp: string) {
-  return crypto.createHmac("sha256", COOKIE_SECRET).update(`homehub:${exp}`).digest("hex");
-}
+const ALL_PERMISSIONS: MenuPermission[] = ["overview","people","timeline","downloads","media","smart","actions","ai","network","credentials","printer","settings"];
+type SessionUser = { id: string; name: string; isAdmin: boolean; permissions: MenuPermission[]; personId?: string };
 
-function validSession(req: express.Request) {
+function normalizeLogin(v: string) { return v.trim().toLocaleLowerCase("hu-HU"); }
+function passwordDigest(password: string, salt: string) { return crypto.scryptSync(password, salt, 32).toString("hex"); }
+function makePasswordRecord(password: string) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return { passwordSalt: salt, passwordHash: passwordDigest(password, salt) };
+}
+function verifyPersonPassword(person: PersonProfile, password: string) {
+  const auth = person.auth;
+  if (!auth?.enabled || !auth.passwordSalt || !auth.passwordHash) return false;
+  return safeEqual(passwordDigest(password, auth.passwordSalt), auth.passwordHash);
+}
+function sessionSignature(userId: string, exp: string) {
+  return crypto.createHmac("sha256", COOKIE_SECRET).update(`homehub:${userId}:${exp}`).digest("hex");
+}
+function sessionUser(req: express.Request): SessionUser | null {
   const value = cookieMap(req)[SESSION_COOKIE];
-  if (!value) return false;
-  const [exp, sig] = value.split(".");
-  if (!exp || !sig || !/^\d+$/.test(exp)) return false;
-  if (Number(exp) < Math.floor(Date.now() / 1000)) return false;
-  return safeEqual(sig, sessionSignature(exp));
+  if (!value) return null;
+  const [userId, exp, sig] = value.split(".");
+  if (!userId || !exp || !sig || !/^\d+$/.test(exp)) return null;
+  if (Number(exp) < Math.floor(Date.now() / 1000)) return null;
+  if (!safeEqual(sig, sessionSignature(userId, exp))) return null;
+  if (userId === "admin") return { id: "admin", name: "Admin", isAdmin: true, permissions: ALL_PERMISSIONS };
+  const person = store.get().people.find(p => p.id === userId);
+  if (!person?.auth?.enabled) return null;
+  return { id: person.id, personId: person.id, name: person.nickname || person.name, isAdmin: false, permissions: person.auth.permissions || ["overview"] };
 }
-
-function setSessionCookie(req: express.Request, res: express.Response) {
+function validSession(req: express.Request) { return Boolean(sessionUser(req)); }
+function setSessionCookie(req: express.Request, res: express.Response, userId: string) {
   const exp = String(Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS);
-  const value = `${exp}.${sessionSignature(exp)}`;
+  const value = `${userId}.${exp}.${sessionSignature(userId, exp)}`;
   const secure = req.secure || req.header("x-forwarded-proto") === "https" || isProd;
-  const parts = [
-    `${SESSION_COOKIE}=${encodeURIComponent(value)}`,
-    "Path=/",
-    `Max-Age=${SESSION_TTL_SECONDS}`,
-    "HttpOnly",
-    "SameSite=Strict"
-  ];
+  const parts = [`${SESSION_COOKIE}=${encodeURIComponent(value)}`,"Path=/",`Max-Age=${SESSION_TTL_SECONDS}`,"HttpOnly","SameSite=Strict"];
   if (secure) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
-
 function clearSessionCookie(req: express.Request, res: express.Response) {
   const secure = req.secure || req.header("x-forwarded-proto") === "https" || isProd;
   const parts = [`${SESSION_COOKIE}=`, "Path=/", "Max-Age=0", "HttpOnly", "SameSite=Strict"];
   if (secure) parts.push("Secure");
   res.setHeader("Set-Cookie", parts.join("; "));
 }
-
+function requiredPermission(req: express.Request): MenuPermission | null {
+  const path = req.path;
+  if (req.method === "GET" && /^\/api\/people\/[^/]+\/avatar$/.test(path)) return null;
+  if (path.startsWith("/api/people")) return "people";
+  if (path.startsWith("/api/history")) return "timeline";
+  if (path.startsWith("/api/torrents") || path.startsWith("/api/copies")) return "downloads";
+  if (path.startsWith("/api/media")) return "media";
+  if (path.startsWith("/api/smart-home") || path.startsWith("/api/vacuum")) return "smart";
+  if (path.startsWith("/api/automations") || path.startsWith("/api/alerts")) return "actions";
+  if (path.startsWith("/api/ai")) return "ai";
+  if (path.startsWith("/api/network")) return "network";
+  if (path.startsWith("/api/settings")) return "settings";
+  return null;
+}
 function userAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  if (!validSession(req)) return res.status(401).json({ error: "login_required" });
+  const user = sessionUser(req);
+  if (!user) return res.status(401).json({ error: "login_required" });
+  const needed = requiredPermission(req);
+  if (needed && !user.isAdmin && !user.permissions.includes(needed)) return res.status(403).json({ error: "forbidden", permission: needed });
+  res.locals.user = user;
   next();
+}
+function adminOnly(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const user = sessionUser(req);
+  if (!user) return res.status(401).json({ error: "login_required" });
+  if (!user.isAdmin) return res.status(403).json({ error: "admin_required" });
+  res.locals.user = user;
+  next();
+}
+function publicPerson(p: PersonProfile) {
+  return { ...p, avatarBase64: undefined, auth: p.auth ? { enabled: p.auth.enabled, loginName: p.auth.loginName, permissions: p.auth.permissions, forcePasswordChange: Boolean(p.auth.forcePasswordChange), hasPassword: Boolean(p.auth.passwordHash) } : undefined, hasAvatar: Boolean(p.avatarBase64) };
 }
 
 function bridgeAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -251,7 +288,7 @@ function publicState() {
     settings: s.settings,
     copies: s.copies,
     networkEvents: s.networkEvents.slice(-50).reverse(),
-    people: s.people.map(p => ({ ...p, avatarBase64: undefined, hasAvatar: Boolean(p.avatarBase64) })),
+    people: s.people.map(publicPerson),
     presence: Object.values(s.presenceRuntime),
     timeline: s.history.slice(-150).reverse(),
     recentCommands: s.commands.slice(-10).reverse().map((c) => ({
@@ -275,23 +312,34 @@ function publicState() {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, version: VERSION }));
 
-app.get("/api/auth/status", (req, res) => res.json({ authenticated: validSession(req) }));
+app.get("/api/auth/status", (req, res) => {
+  const user = sessionUser(req);
+  res.json({ authenticated: Boolean(user), user });
+});
 app.post("/api/auth/login", (req, res) => {
   const ip = req.ip || "unknown";
   const now = Date.now();
   const record = loginAttempts.get(ip);
-  if (record && record.resetAt > now && record.count >= 8) {
-    return res.status(429).json({ error: "too_many_attempts" });
+  if (record && record.resetAt > now && record.count >= 8) return res.status(429).json({ error: "too_many_attempts" });
+  const parsed = z.object({ login: z.string().trim().max(120).optional().default(""), password: z.string().min(1).max(512) }).safeParse(req.body);
+  if (!parsed.success) return res.status(401).json({ error: "invalid_credentials" });
+  const login = normalizeLogin(parsed.data.login);
+  let userId = "";
+  if ((!login || login === "admin") && safeEqual(parsed.data.password, APP_PASSWORD)) userId = "admin";
+  if (!userId && login) {
+    const person = store.get().people.find(p => p.auth?.enabled && normalizeLogin(p.auth.loginName || "") === login);
+    if (person && verifyPersonPassword(person, parsed.data.password)) userId = person.id;
   }
-  const parsed = z.object({ password: z.string().min(1).max(512) }).safeParse(req.body);
-  if (!parsed.success || !safeEqual(parsed.data.password, APP_PASSWORD)) {
+  if (!userId) {
     const next = !record || record.resetAt <= now ? { count: 1, resetAt: now + 15 * 60_000 } : { ...record, count: record.count + 1 };
     loginAttempts.set(ip, next);
-    return res.status(401).json({ error: "invalid_password" });
+    return res.status(401).json({ error: "invalid_credentials" });
   }
   loginAttempts.delete(ip);
-  setSessionCookie(req, res);
-  res.json({ ok: true });
+  setSessionCookie(req, res, userId);
+  if (userId === "admin") return res.json({ ok: true, user: { id:"admin",name:"Admin",isAdmin:true,permissions:ALL_PERMISSIONS } });
+  const person = store.get().people.find(p => p.id === userId)!;
+  res.json({ ok: true, user: { id:person.id,personId:person.id,name:person.nickname||person.name,isAdmin:false,permissions:person.auth?.permissions||["overview"] } });
 });
 app.post("/api/auth/logout", userAuth, (req, res) => {
   clearSessionCookie(req, res);
@@ -318,9 +366,9 @@ const personInputSchema = z.object({
 
 app.get("/api/people", userAuth, (_req, res) => {
   const s = store.get();
-  res.json({ people: s.people.map(p => ({ ...p, avatarBase64: undefined, hasAvatar: Boolean(p.avatarBase64) })), presence: Object.values(s.presenceRuntime) });
+  res.json({ people: s.people.map(publicPerson), presence: Object.values(s.presenceRuntime) });
 });
-app.post("/api/people", userAuth, (req, res) => {
+app.post("/api/people", adminOnly, (req, res) => {
   const parsed = personInputSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const now = new Date().toISOString();
@@ -330,9 +378,9 @@ app.post("/api/people", userAuth, (req, res) => {
     updatePresence(s, s.snapshot?.network || []);
     pushHistory(s, { category: "system", type: "people.created", entityId: person.id, entityName: person.name, message: `${person.name} profilja létrejött.`, createdAt: now });
   });
-  res.status(201).json({ ...person, avatarBase64: undefined, hasAvatar: false });
+  res.status(201).json(publicPerson(person));
 });
-app.put("/api/people/:id", userAuth, (req, res) => {
+app.put("/api/people/:id", adminOnly, (req, res) => {
   const parsed = personInputSchema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const id = paramString(req.params.id);
@@ -345,9 +393,42 @@ app.put("/api/people/:id", userAuth, (req, res) => {
     updatePresence(s, s.snapshot?.network || []);
   });
   if (!updated) return res.status(404).json({ error: "person_not_found" });
-  res.json({ ...updated, avatarBase64: undefined, hasAvatar: Boolean(updated.avatarBase64) });
+  res.json(publicPerson(updated));
 });
-app.delete("/api/people/:id", userAuth, (req, res) => {
+const personAccessSchema = z.object({
+  enabled: z.boolean().default(false),
+  loginName: z.string().trim().max(80),
+  password: z.union([z.literal(""), z.string().min(8).max(256)]).optional().default(""),
+  permissions: z.array(z.enum(["overview","people","timeline","downloads","media","smart","actions","ai","network","credentials","printer","settings"])).max(12).default(["overview"])
+});
+app.put("/api/people/:id/access", adminOnly, (req, res) => {
+  const parsed = personAccessSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const id = paramString(req.params.id);
+  const loginName = parsed.data.loginName.trim();
+  if (parsed.data.enabled && loginName.length < 2) return res.status(400).json({ error: "login_name_required" });
+  if (normalizeLogin(loginName) === "admin") return res.status(400).json({ error: "reserved_login_name" });
+  const duplicate = store.get().people.some(p => p.id !== id && p.auth?.enabled && normalizeLogin(p.auth.loginName || "") === normalizeLogin(loginName));
+  if (duplicate) return res.status(409).json({ error: "login_name_in_use" });
+  let updated: PersonProfile | undefined;
+  let missingPassword = false;
+  store.mutate(s => {
+    const p = s.people.find(x => x.id === id);
+    if (!p) return;
+    const old = p.auth;
+    if (parsed.data.enabled && !parsed.data.password && !old?.passwordHash) { missingPassword = true; return; }
+    const passwordRecord = parsed.data.password ? makePasswordRecord(parsed.data.password) : { passwordSalt: old?.passwordSalt, passwordHash: old?.passwordHash };
+    p.auth = { enabled: parsed.data.enabled, loginName, permissions: parsed.data.permissions.length ? parsed.data.permissions : ["overview"], ...passwordRecord };
+    p.updatedAt = new Date().toISOString();
+    updated = structuredClone(p);
+    pushHistory(s, { category:"system", type:"people.access.updated", entityId:p.id, entityName:p.name, message:`${p.name}: webes hozzáférés ${p.auth.enabled ? "bekapcsolva" : "kikapcsolva"}.`, createdAt:p.updatedAt, data:{ loginName:p.auth.loginName, permissions:p.auth.permissions } });
+  });
+  if (missingPassword) return res.status(400).json({ error: "password_required_for_first_enable" });
+  if (!updated) return res.status(404).json({ error: "person_not_found" });
+  res.json(publicPerson(updated));
+});
+
+app.delete("/api/people/:id", adminOnly, (req, res) => {
   const id = paramString(req.params.id);
   let removed: PersonProfile | undefined;
   store.mutate(s => {
@@ -361,7 +442,7 @@ app.delete("/api/people/:id", userAuth, (req, res) => {
   if (!removed) return res.status(404).json({ error: "person_not_found" });
   res.json({ ok: true });
 });
-app.post("/api/people/:id/avatar", userAuth, upload.single("avatar"), (req, res) => {
+app.post("/api/people/:id/avatar", adminOnly, upload.single("avatar"), (req, res) => {
   const id = paramString(req.params.id);
   if (!req.file) return res.status(400).json({ error: "avatar_missing" });
   if (![/^image\/jpeg$/, /^image\/png$/, /^image\/webp$/].some(r => r.test(req.file!.mimetype))) return res.status(400).json({ error: "avatar_type_not_supported" });
@@ -455,10 +536,11 @@ const automationActionSchema = z.discriminatedUnion("type", [
 ]);
 const automationRuleInputSchema = z.object({
   name: z.string().trim().min(2).max(120), enabled: z.boolean().default(true), trigger: automationTriggerSchema,
-  actions: z.array(automationActionSchema).min(1).max(6), cooldownSeconds: z.number().int().min(0).max(604800).default(300)
+  actions: z.array(automationActionSchema).min(1).max(6), cooldownSeconds: z.number().int().min(0).max(604800).default(300),
+  notifyEmail: z.boolean().optional().default(true)
 });
 
-type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds">;
+type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds" | "notifyEmail">;
 
 function automationGateSafety(rule: AutomationRuleInput) {
   for (const action of rule.actions) {
