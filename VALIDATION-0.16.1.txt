@@ -1,0 +1,15 @@
+HomeHub v0.16.1 validation
+Date: 2026-09-04
+
+PASS - web/src/main.tsx TypeScript/TSX syntax transpile
+PASS - server/src/index.ts TypeScript syntax transpile
+PASS - server/src/tuya.ts TypeScript syntax transpile
+PASS - Go bridge test ./...
+PASS - Linux amd64 Bridge build
+PASS - Linux ARMv7 Bridge build
+PASS - Bridge binary reports 0.16.1
+PASS - myGate light_1 false is no longer rejected by pulse-only validation
+PASS - Open/Close/Start/Stop/Pedestrian remain true-only pulse commands
+PASS - Feyree displayed charging state derives from measured current/power before unreliable work_state
+PASS - exact DP-code matching precedes generic partial matching
+PASS - Feyree electrical units corrected for known DP semantics

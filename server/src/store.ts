@@ -8,9 +8,14 @@ const initialState: State = {
   commands: [],
   settings: {
     autoCopyEnabled: true,
-    autoCopyDestination: "Filmek"
+    autoCopyDestination: "Filmek",
+    aiMode: "suggest"
   },
   copies: {},
+  automations: [],
+  automationRuntime: {},
+  alerts: [],
+  knownNetworkMacs: [],
   persistentUpdatedAt: null
 };
 
@@ -30,6 +35,10 @@ export class Store {
           settings: { ...initialState.settings, ...(disk.settings || {}) },
           copies: disk.copies || {},
           commands: disk.commands || [],
+          automations: Array.isArray(disk.automations) ? disk.automations : [],
+          automationRuntime: disk.automationRuntime || {},
+          alerts: Array.isArray(disk.alerts) ? disk.alerts : [],
+          knownNetworkMacs: Array.isArray(disk.knownNetworkMacs) ? disk.knownNetworkMacs : [],
           persistentUpdatedAt: disk.persistentUpdatedAt || null
         };
       } catch {
@@ -58,7 +67,11 @@ export class Store {
       persistentUpdatedAt: this.state.persistentUpdatedAt || new Date(0).toISOString(),
       settings: structuredClone(this.state.settings),
       copies: structuredClone(this.state.copies),
-      commands: structuredClone(this.state.commands.slice(-200))
+      commands: structuredClone(this.state.commands.slice(-200)),
+      automations: structuredClone(this.state.automations),
+      automationRuntime: structuredClone(this.state.automationRuntime),
+      alerts: structuredClone(this.state.alerts.slice(-200)),
+      knownNetworkMacs: structuredClone(this.state.knownNetworkMacs)
     };
   }
 
@@ -69,6 +82,10 @@ export class Store {
     this.state.settings = { ...initialState.settings, ...(backup.settings || {}) };
     this.state.copies = backup.copies || {};
     this.state.commands = Array.isArray(backup.commands) ? backup.commands.slice(-200) : [];
+    this.state.automations = Array.isArray(backup.automations) ? backup.automations : [];
+    this.state.automationRuntime = backup.automationRuntime || {};
+    this.state.alerts = Array.isArray(backup.alerts) ? backup.alerts.slice(-200) : [];
+    this.state.knownNetworkMacs = Array.isArray(backup.knownNetworkMacs) ? backup.knownNetworkMacs : [];
     this.state.persistentUpdatedAt = backup.persistentUpdatedAt;
     this.save();
     return true;

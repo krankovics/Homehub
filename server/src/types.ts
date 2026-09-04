@@ -33,6 +33,47 @@ export type NetworkStatus = {
   note: string;
 };
 
+export type VacuumStatus = {
+  configured: boolean;
+  online: boolean;
+  controlReady: boolean;
+  name: string;
+  model: string;
+  ip: string;
+  state?: string;
+  battery?: number;
+  areaM2?: number;
+  durationSec?: number;
+  metrics?: Array<{ name: string; value: unknown; unit?: string }>;
+  note: string;
+  updatedAt: string;
+};
+
+
+export type MediaItem = {
+  id: string;
+  name: string;
+  relativePath: string;
+  folder: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  extension: string;
+  nativePlay: boolean;
+  playUrl: string;
+  downloadUrl: string;
+};
+
+export type MediaSnapshot = {
+  enabled: boolean;
+  online: boolean;
+  publicBaseUrl: string;
+  count: number;
+  truncated: boolean;
+  error?: string;
+  items: MediaItem[];
+  updatedAt: string;
+};
+
 export type Snapshot = {
   bridgeId: string;
   timestamp: string;
@@ -49,6 +90,8 @@ export type Snapshot = {
   };
   printer?: PrinterStatus;
   network?: NetworkStatus[];
+  vacuum?: VacuumStatus;
+  media?: MediaSnapshot;
   persistentState?: PersistentBackup;
   localCopies?: Record<string, { hash: string; name: string; destination: string; copiedAt: string }>;
 };
@@ -57,7 +100,11 @@ export type CommandType =
   | "torrent.addMagnet"
   | "torrent.addFile"
   | "torrent.copyToWd"
-  | "torrent.remove";
+  | "torrent.remove"
+  | "vacuum.start"
+  | "vacuum.pause"
+  | "vacuum.stop"
+  | "vacuum.dock";
 
 export type Command = {
   id: string;
@@ -71,9 +118,12 @@ export type Command = {
   message?: string;
 };
 
+export type AIMode = "off" | "suggest" | "approved";
+
 export type Settings = {
   autoCopyEnabled: boolean;
   autoCopyDestination: string;
+  aiMode: AIMode;
 };
 
 export type CopyRecord = {
@@ -96,12 +146,61 @@ export type CopyRecord = {
   updatedAt: string;
 };
 
+export type AutomationTrigger =
+  | { type: "tuya.numeric"; deviceId: string; code: string; operator: "gt" | "gte" | "lt" | "lte" | "eq"; value: number; forSeconds?: number }
+  | { type: "tuya.state"; deviceId: string; code: string; operator: "eq" | "neq"; value: string | number | boolean; forSeconds?: number }
+  | { type: "network.online_window"; networkId: string; after: string; before: string; forSeconds?: number; timezone?: string }
+  | { type: "network.new_device" }
+  | { type: "schedule"; time: string; days: number[]; timezone?: string };
+
+export type AutomationAction =
+  | { type: "tuya.command"; deviceId: string; code: string; value: unknown }
+  | { type: "vacuum.command"; action: "start" | "pause" | "stop" | "dock" }
+  | { type: "ai.summary"; subject: string; email?: boolean }
+  | { type: "alert"; subject: string; message: string; email?: boolean };
+
+export type AutomationRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger: AutomationTrigger;
+  actions: AutomationAction[];
+  cooldownSeconds: number;
+  createdAt: string;
+  updatedAt: string;
+  lastTriggeredAt?: string;
+};
+
+export type AutomationRuntime = {
+  conditionSince?: string;
+  latched?: boolean;
+  lastScheduleKey?: string;
+  lastSeenValue?: string;
+};
+
+export type AlertRecord = {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+  emailRequested: boolean;
+  emailSent: boolean;
+  emailError?: string;
+  readAt?: string;
+};
+
 export type PersistentBackup = {
   version: 1;
   persistentUpdatedAt: string;
   settings: Settings;
   copies: Record<string, CopyRecord>;
   commands: Command[];
+  automations?: AutomationRule[];
+  automationRuntime?: Record<string, AutomationRuntime>;
+  alerts?: AlertRecord[];
+  knownNetworkMacs?: string[];
 };
 
 export type State = {
@@ -110,5 +209,9 @@ export type State = {
   commands: Command[];
   settings: Settings;
   copies: Record<string, CopyRecord>;
+  automations: AutomationRule[];
+  automationRuntime: Record<string, AutomationRuntime>;
+  alerts: AlertRecord[];
+  knownNetworkMacs: string[];
   persistentUpdatedAt: string | null;
 };

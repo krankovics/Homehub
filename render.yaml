@@ -24,3 +24,25 @@ services:
         value: https://openapi.tuyaeu.com
       - key: TUYA_REFRESH_MS
         value: "15000"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5
+      - key: AI_TIMEOUT_MS
+        value: "45000"
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_SECURE
+        value: "true"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: SMTP_FROM_NAME
+        value: HomeHub
+      - key: ALERT_EMAIL_TO
+        sync: false

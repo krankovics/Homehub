@@ -31,3 +31,21 @@ Ha kizárólag `x509: certificate signed by unknown authority` hiba jelentkezik 
 ## Automatikus indulás
 
 Miután a `-once` teszt működik, az `install-wd-os3.sh` telepíti a Bridge-et `/DataVolume/homehub` alá és létrehozza az init scriptet.
+
+## v0.16 Média szerver
+
+A v0.16 Bridge helyi HTTP médiaszervert is indít. A jelenlegi WD címmel az alapértelmezett endpoint:
+
+```text
+http://192.168.1.180:8788/health
+```
+
+A filmek lejátszási és offline letöltési URL-jei csak a helyi hálózaton működnek, és HMAC-aláírással + lejárati idővel védettek. A nagy filmfájlok nem kerülnek a Renderre.
+
+Meglévő v0.15 telepítés frissítése a config felülírása nélkül:
+
+```sh
+sh upgrade-wd-os3.sh ./homehub-bridge-linux-armv7
+```
+
+Ez a `/DataVolume/homehub/config.json` fájlt változatlanul hagyja. Ha a régi configban nincs `media` blokk, a Bridge automatikusan a `Filmek` célmappát és a WD ismert LAN-címét használja.

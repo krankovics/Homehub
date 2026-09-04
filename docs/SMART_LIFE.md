@@ -29,7 +29,7 @@ Ismert DP Instruction mapping:
 
 ```text
 door_sensor_state  -> kapuállapot
-light_1            -> világítás impulzus
+light_1            -> világítás állapottartó Boolean (Be/Ki)
 stop_1             -> stop impulzus
 pedestrian_1       -> személybejáró impulzus
 start_1            -> start impulzus
@@ -41,7 +41,7 @@ operative_mode_1   -> üzemmód
 alarms             -> figyelmeztetés / riasztás
 ```
 
-A logok alapján az Open, Close és Light művelet `On` impulzust kap, majd maga a gatePRO jelenti vissza az `Off` állapotot. A HomeHub ezért ezekhez csak `true` parancsot küld, külön Off parancsot nem.
+A v0.16.1-től az Open / Close / Start / Stop / Pedestrian műveleteket impulzusos DP-ként kezeljük, ezekhez csak `true` parancs megy. A `light_1` külön állapottartó Boolean: a HomeHub az aktuális állapot alapján `true` vagy `false` értéket küld, így a világítás be- és kikapcsolható.
 
 A kapuállapot magyar mappingje:
 
@@ -78,7 +78,7 @@ ChargingOperation
 cp
 ```
 
-A részletes panelen megjelenik az állapot, feszültség, áram, teljesítmény, energia, CP és fázisadatok, amennyiben a Tuya státuszban ténylegesen rendelkezésre állnak.
+A részletes panelen megjelenik az állapot, feszültség, áram, teljesítmény, energia, CP és fázisadatok, amennyiben a Tuya státuszban ténylegesen rendelkezésre állnak. A v0.16.1 a tényleges töltést elsősorban a mért áram/teljesítményből állapítja meg, mert egyes Feyree firmware-ek töltés közben is `charger free` work_state értéket küldenek. Az ismert elektromos DP-k mértékegységét a HomeHub a DP jelentése alapján is korrigálja, ha a Tuya status specification hibás unitot közöl.
 
 Áramerősséget és időzítést a HomeHub csak akkor enged módosítani, ha az adott DP-hez a Tuya API function specificationt is ad, és abból ismert a típus/tartomány. A `Set16A`, `Set32A`, `Set40A`, `Set50A`, `set60a`, `set80a` kódokat a HomeHub nem aktiválja találomra.
 

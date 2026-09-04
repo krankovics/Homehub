@@ -27,3 +27,7 @@ A Bridge másolás közben 2 másodpercenként progress eventet küld a cloud AP
 ## Printer adapter
 
 A v0.7 printer adapter nem proxyzza a print jobokat a felhőn keresztül. A KD20 gyári USB Print Serverét monitorozza helyi TCP probe-okkal, és a PWA-ban megjeleníti a setup shortcutot/statuszt.
+
+## v0.16 helyi médiaútvonal
+
+A filmfájlok nem a felhős HomeHub szerveren keresztül streamelődnek. A WD Bridge indexeli a konfigurált videómappákat, majd 24 órás aláírt LAN URL-eket ad a HomeHub szervernek. A PWA a teljes médiaindexet csak a Média tab megnyitásakor kéri le. A Bridge változáskor, illetve periodikusan szinkronizálja újra a filmjegyzéket, így a normál 3 másodperces HomeHub state polling nem hordozza a teljes médiakatalógust.

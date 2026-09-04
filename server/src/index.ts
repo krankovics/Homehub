@@ -6,10 +6,13 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { Command, PersistentBackup, Snapshot } from "./types.js";
+import type { AutomationRule, Command, PersistentBackup, Snapshot } from "./types.js";
 import { TuyaService } from "./tuya.js";
+import { Mailer } from "./mailer.js";
+import { AutomationEngine } from "./automations.js";
+import { AIService, type AIActionPlan } from "./ai.js";
 
-const VERSION = "0.12.0";
+const VERSION = "0.16.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -25,6 +28,7 @@ const TUYA_ACCESS_SECRET = process.env.TUYA_ACCESS_SECRET || "";
 const TUYA_API_ENDPOINT = process.env.TUYA_API_ENDPOINT || "https://openapi.tuyaeu.com";
 const TUYA_REFRESH_MS = Number(process.env.TUYA_REFRESH_MS || 15_000);
 const tuya = new TuyaService(TUYA_API_ENDPOINT, TUYA_ACCESS_ID, TUYA_ACCESS_SECRET);
+const mailer = new Mailer();
 
 
 if (!APP_PASSWORD || !COOKIE_SECRET || !BRIDGE_TOKEN) {
@@ -35,6 +39,7 @@ const app = express();
 app.set("trust proxy", 1);
 const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 const store = new Store(DATA_FILE);
+const ai = new AIService(store, tuya);
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 app.use(express.json({ limit: "24mb" }));
@@ -127,6 +132,15 @@ function enqueue(bridgeId: string, type: Command["type"], payload: Record<string
   return cmd;
 }
 
+const automationEngine = new AutomationEngine(store, tuya, mailer, (action) => {
+  const current = store.get();
+  const bridgeId = current.snapshot?.bridgeId;
+  const vacuum = current.snapshot?.vacuum;
+  if (!bridgeId) throw new Error("bridge_offline");
+  if (!vacuum?.configured || !vacuum.online || !vacuum.controlReady) throw new Error("vacuum_not_ready");
+  enqueue(bridgeId, `vacuum.${action}` as Command["type"], {});
+}, async () => (await ai.summary()).text);
+
 function autoQueueCopies(snapshot: Snapshot) {
   const s = store.get();
   if (!s.settings.autoCopyEnabled) return;
@@ -196,8 +210,12 @@ function reconcileLocalCopies(snapshot: Snapshot) {
 function publicState() {
   const s = store.get();
   const lastSeen = s.bridgeLastSeenAt ? new Date(s.bridgeLastSeenAt).getTime() : 0;
+  const snapshot = s.snapshot ? {
+    ...s.snapshot,
+    media: s.snapshot.media ? { ...s.snapshot.media, items: [] } : undefined
+  } : null;
   return {
-    snapshot: s.snapshot,
+    snapshot,
     bridgeLastSeenAt: s.bridgeLastSeenAt,
     bridgeOnline: lastSeen > 0 && Date.now() - lastSeen <= BRIDGE_STALE_MS,
     settings: s.settings,
@@ -210,7 +228,14 @@ function publicState() {
       ok: c.ok,
       message: c.message
     })),
-    smartHome: tuya.state()
+    smartHome: tuya.state(),
+    automation: {
+      rules: s.automations,
+      alerts: s.alerts.slice(-50).reverse(),
+      unread: s.alerts.filter(a => !a.readAt).length,
+      email: automationEngine.emailStatus()
+    },
+    ai: ai.status()
   };
 }
 
@@ -240,14 +265,184 @@ app.post("/api/auth/logout", userAuth, (req, res) => {
 });
 
 app.get("/api/state", userAuth, (_req, res) => res.json(publicState()));
+app.get("/api/media", userAuth, (_req, res) => {
+  const media = store.get().snapshot?.media;
+  if (!media) return res.status(503).json({ error: "media_not_available" });
+  res.json(media);
+});
+
+app.post("/api/vacuum/command", userAuth, (req, res) => {
+  const current = store.get();
+  const bridgeId = current.snapshot?.bridgeId;
+  const vacuum = current.snapshot?.vacuum;
+  if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
+  if (!vacuum?.configured) return res.status(409).json({ error: "vacuum_not_configured" });
+  if (!vacuum.online) return res.status(409).json({ error: "vacuum_offline" });
+  if (!vacuum.controlReady) return res.status(409).json({ error: "vacuum_control_not_ready" });
+  const parsed = z.object({ action: z.enum(["start", "pause", "stop", "dock"]) }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_vacuum_action" });
+  const cmd = enqueue(bridgeId, `vacuum.${parsed.data.action}` as Command["type"], {});
+  res.status(202).json(cmd);
+});
+
+
+const automationTriggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("tuya.numeric"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["gt","gte","lt","lte","eq"]), value: z.number(), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
+  z.object({ type: z.literal("tuya.state"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["eq","neq"]), value: z.union([z.string(),z.number(),z.boolean()]), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
+  z.object({ type: z.literal("network.online_window"), networkId: z.string().min(1), after: z.string().regex(/^\d{2}:\d{2}$/), before: z.string().regex(/^\d{2}:\d{2}$/), forSeconds: z.number().int().min(0).max(86400).optional().default(0), timezone: z.string().optional().default("Europe/Budapest") }),
+  z.object({ type: z.literal("network.new_device") }),
+  z.object({ type: z.literal("schedule"), time: z.string().regex(/^\d{2}:\d{2}$/), days: z.array(z.number().int().min(0).max(6)).min(1).max(7), timezone: z.string().optional().default("Europe/Budapest") })
+]);
+const automationActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("tuya.command"), deviceId: z.string().min(1), code: z.string().min(1), value: z.any() }),
+  z.object({ type: z.literal("vacuum.command"), action: z.enum(["start","pause","stop","dock"]) }),
+  z.object({ type: z.literal("ai.summary"), subject: z.string().min(1).max(180), email: z.boolean().optional().default(true) }),
+  z.object({ type: z.literal("alert"), subject: z.string().min(1).max(180), message: z.string().min(1).max(4000), email: z.boolean().optional().default(true) })
+]);
+const automationRuleInputSchema = z.object({
+  name: z.string().trim().min(2).max(120), enabled: z.boolean().default(true), trigger: automationTriggerSchema,
+  actions: z.array(automationActionSchema).min(1).max(6), cooldownSeconds: z.number().int().min(0).max(604800).default(300)
+});
+
+function automationGateSafety(rule: z.infer<typeof automationRuleInputSchema>) {
+  for (const action of rule.actions) {
+    if (action.type !== "tuya.command") continue;
+    const d = tuya.state().devices.find(x => x.id === action.deviceId);
+    if (d && (d.profile === "mygate" || /kapu|gate|garage|garázs|door|lock|zár/i.test(`${d.name} ${d.productName}`))) return false;
+  }
+  return true;
+}
+
+app.get("/api/automations", userAuth, (_req, res) => res.json(publicState().automation));
+app.post("/api/automations", userAuth, (req, res) => {
+  const parsed = automationRuleInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!automationGateSafety(parsed.data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
+  const now = new Date().toISOString();
+  const rule: AutomationRule = { id: crypto.randomUUID(), ...parsed.data, createdAt: now, updatedAt: now };
+  store.mutate(s => { s.automations.push(rule); });
+  automationEngine.tick().catch(() => {});
+  res.status(201).json(rule);
+});
+app.put("/api/automations/:id", userAuth, (req, res) => {
+  const id = paramString(req.params.id);
+  const parsed = automationRuleInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!automationGateSafety(parsed.data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
+  let updated: AutomationRule | null = null;
+  store.mutate(s => {
+    const existing = s.automations.find(x => x.id === id); if (!existing) return;
+    updated = { ...existing, ...parsed.data, updatedAt: new Date().toISOString() };
+    s.automations = s.automations.map(x => x.id === id ? updated! : x);
+    s.automationRuntime[id] = {};
+  });
+  if (!updated) return res.status(404).json({ error: "automation_not_found" });
+  res.json(updated);
+});
+app.delete("/api/automations/:id", userAuth, (req, res) => {
+  const id = paramString(req.params.id); let found = false;
+  store.mutate(s => { found = s.automations.some(x => x.id === id); s.automations = s.automations.filter(x => x.id !== id); delete s.automationRuntime[id]; });
+  if (!found) return res.status(404).json({ error: "automation_not_found" });
+  res.json({ ok: true });
+});
+app.post("/api/automations/:id/run", userAuth, async (req, res) => {
+  const rule = store.get().automations.find(x => x.id === paramString(req.params.id));
+  if (!rule) return res.status(404).json({ error: "automation_not_found" });
+  try { await automationEngine.runNow(rule); res.json({ ok: true }); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/alerts/:id/read", userAuth, (req, res) => {
+  const id = paramString(req.params.id); let found = false;
+  store.mutate(s => { const a = s.alerts.find(x => x.id === id); if (a) { found = true; a.readAt = a.readAt || new Date().toISOString(); } });
+  if (!found) return res.status(404).json({ error: "alert_not_found" });
+  res.json({ ok: true });
+});
+app.post("/api/alerts/read-all", userAuth, (_req, res) => {
+  const now = new Date().toISOString(); store.mutate(s => { for (const a of s.alerts) if (!a.readAt) a.readAt = now; }); res.json({ ok: true });
+});
 
 function paramString(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? "";
   return value ?? "";
 }
 
+const aiActionPlanInputSchema = z.object({
+  kind: z.enum(["tuya.command", "vacuum.command", "none"]),
+  summary: z.string().max(300), deviceId: z.string(), code: z.string(),
+  valueType: z.enum(["boolean", "number", "string", "none"]),
+  booleanValue: z.boolean(), numberValue: z.number(), stringValue: z.string(),
+  vacuumAction: z.enum(["start", "pause", "stop", "dock", "none"]),
+  reason: z.string().max(800), risk: z.enum(["low", "medium", "blocked"])
+});
+
+app.get("/api/ai/status", userAuth, (_req, res) => res.json(ai.status()));
+app.post("/api/ai/chat", userAuth, async (req, res) => {
+  const parsed = z.object({ message: z.string().trim().min(1).max(4000) }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_ai_message" });
+  try { res.json(await ai.chat(parsed.data.message)); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/ai/summary", userAuth, async (_req, res) => {
+  try { res.json(await ai.summary()); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/ai/automation-draft", userAuth, async (req, res) => {
+  const parsed = z.object({ request: z.string().trim().min(3).max(4000) }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_ai_automation_request" });
+  try {
+    const result = await ai.draftAutomation(parsed.data.request);
+    if (result.draft) {
+      const validated = automationRuleInputSchema.safeParse(result.draft);
+      if (!validated.success) {
+        result.valid = false;
+        result.warnings.push("HIBA: A generált szabály nem felel meg a HomeHub szabálysémának.");
+      } else if (!automationGateSafety(validated.data)) {
+        result.valid = false;
+        result.warnings.push("HIBA: A HomeHub kapubiztonsági policy blokkolta a szabályt.");
+      }
+    }
+    res.json(result);
+  } catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/ai/action-draft", userAuth, async (req, res) => {
+  const parsed = z.object({ request: z.string().trim().min(2).max(2000) }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_ai_action_request" });
+  try { res.json(await ai.draftAction(parsed.data.request)); }
+  catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/ai/action-execute", userAuth, async (req, res) => {
+  if (store.get().settings.aiMode !== "approved") return res.status(409).json({ error: "ai_approved_execution_disabled" });
+  const parsed = z.object({ confirm: z.literal(true), plan: aiActionPlanInputSchema }).safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: "invalid_ai_action_plan" });
+  const checked = ai.validateActionPlan(parsed.data.plan as AIActionPlan);
+  if (!checked.valid || checked.plan.risk === "blocked") return res.status(409).json({ error: checked.warning || "ai_action_blocked" });
+  try {
+    if (checked.plan.kind === "vacuum.command") {
+      const bridgeId = store.get().snapshot?.bridgeId;
+      const vacuum = store.get().snapshot?.vacuum;
+      if (!bridgeId) return res.status(409).json({ error: "bridge_offline" });
+      if (!vacuum?.configured || !vacuum.online || !vacuum.controlReady) return res.status(409).json({ error: "vacuum_not_ready" });
+      const action = checked.plan.vacuumAction;
+      if (action === "none") return res.status(400).json({ error: "invalid_vacuum_action" });
+      const cmd = enqueue(bridgeId, `vacuum.${action}` as Command["type"], {});
+      return res.status(202).json({ ok: true, command: cmd, summary: checked.plan.summary });
+    }
+    if (checked.plan.kind === "tuya.command") {
+      const device = tuya.state().devices.find(x => x.id === checked.plan.deviceId);
+      if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
+      const value = ai.actionValue(checked.plan);
+      const invalid = validateTuyaCommand(device, checked.plan.code, value);
+      if (invalid) return res.status(400).json({ error: invalid });
+      await tuya.command(device.id, checked.plan.code, value);
+      return res.json({ ok: true, summary: checked.plan.summary });
+    }
+    return res.status(409).json({ error: "ai_action_not_executable" });
+  } catch (err) { res.status(502).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+
 app.post("/api/smart-home/refresh", userAuth, async (_req, res) => {
   await tuya.refresh();
+  await automationEngine.tick();
   res.json(tuya.state());
 });
 function validateTuyaCommand(device: ReturnType<typeof tuya.state>["devices"][number], code: string, value: unknown): string | null {
@@ -256,7 +451,7 @@ function validateTuyaCommand(device: ReturnType<typeof tuya.state>["devices"][nu
   const type = fn.type.toLowerCase();
   let meta: Record<string, unknown> = {};
   try { meta = JSON.parse(fn.values || "{}"); } catch { meta = {}; }
-  if (device.profile === "mygate" && ["light_1","stop_1","pedestrian_1","start_1","open_1","close_1"].includes(code) && value !== true) return "gate_pulse_must_be_true";
+  if (device.profile === "mygate" && ["stop_1","pedestrian_1","start_1","open_1","close_1"].includes(code) && value !== true) return "gate_pulse_must_be_true";
   if (type === "boolean" && typeof value !== "boolean") return "invalid_boolean_value";
   if (type === "enum") {
     const range = Array.isArray(meta.range) ? meta.range.map(String) : [];
@@ -303,7 +498,8 @@ app.get("/api/settings", userAuth, (_req, res) => res.json(store.get().settings)
 app.put("/api/settings", userAuth, (req, res) => {
   const schema = z.object({
     autoCopyEnabled: z.boolean(),
-    autoCopyDestination: z.string().trim().min(1).max(200).refine((v) => !v.includes("..") && !v.startsWith("/"), "relative folder required")
+    autoCopyDestination: z.string().trim().min(1).max(200).refine((v) => !v.includes("..") && !v.startsWith("/"), "relative folder required"),
+    aiMode: z.enum(["off", "suggest", "approved"])
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -392,12 +588,16 @@ app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
 const persistentBackupSchema = z.object({
   version: z.literal(1),
   persistentUpdatedAt: z.string(),
-  settings: z.object({ autoCopyEnabled: z.boolean(), autoCopyDestination: z.string() }),
+  settings: z.object({ autoCopyEnabled: z.boolean(), autoCopyDestination: z.string(), aiMode: z.enum(["off", "suggest", "approved"]).optional().default("suggest") }),
   copies: z.record(z.any()),
   commands: z.array(z.object({
-    id: z.string(), bridgeId: z.string(), type: z.enum(["torrent.addMagnet", "torrent.addFile", "torrent.copyToWd", "torrent.remove"]),
+    id: z.string(), bridgeId: z.string(), type: z.enum(["torrent.addMagnet", "torrent.addFile", "torrent.copyToWd", "torrent.remove", "vacuum.start", "vacuum.pause", "vacuum.stop", "vacuum.dock"]),
     payload: z.record(z.any()), createdAt: z.string(), leasedAt: z.string().optional(), completedAt: z.string().optional(), ok: z.boolean().optional(), message: z.string().optional()
-  }))
+  })),
+  automations: z.array(z.any()).optional(),
+  automationRuntime: z.record(z.any()).optional(),
+  alerts: z.array(z.any()).optional(),
+  knownNetworkMacs: z.array(z.string()).optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
@@ -450,6 +650,17 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
     network: z.array(z.object({
       id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string()
     })).optional(),
+    vacuum: z.object({
+      configured: z.boolean(), online: z.boolean(), controlReady: z.boolean(), name: z.string(), model: z.string(), ip: z.string(),
+      state: z.string().optional(), battery: z.number().int().min(0).max(100).optional(), areaM2: z.number().nonnegative().optional(), durationSec: z.number().nonnegative().optional(),
+      metrics: z.array(z.object({ name: z.string(), value: z.any(), unit: z.string().optional() })).optional(), note: z.string(), updatedAt: z.string()
+    }).optional(),
+    media: z.object({
+      enabled: z.boolean(), online: z.boolean(), publicBaseUrl: z.string(), count: z.number().int().nonnegative(), truncated: z.boolean(), error: z.string().optional(), updatedAt: z.string(),
+      items: z.array(z.object({
+        id: z.string(), name: z.string(), relativePath: z.string(), folder: z.string(), sizeBytes: z.number().nonnegative(), modifiedAt: z.string(), extension: z.string(), nativePlay: z.boolean(), playUrl: z.string().url(), downloadUrl: z.string().url()
+      }))
+    }).optional(),
     persistentState: persistentBackupSchema.optional(),
     localCopies: z.record(z.object({ hash: z.string(), name: z.string(), destination: z.string(), copiedAt: z.string() })).optional()
   }).safeParse(req.body);
@@ -458,11 +669,13 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
   const snapshot = parsed.data as Snapshot;
   if (snapshot.persistentState) store.importPersistent(snapshot.persistentState as PersistentBackup);
   store.mutate((s) => {
-    s.snapshot = { ...snapshot, persistentState: undefined, localCopies: undefined };
+    const previousMedia = s.snapshot?.media;
+    s.snapshot = { ...snapshot, media: snapshot.media ?? previousMedia, persistentState: undefined, localCopies: undefined };
     s.bridgeLastSeenAt = new Date().toISOString();
   }, false);
   reconcileLocalCopies(snapshot);
   autoQueueCopies(snapshot);
+  automationEngine.tick().catch(() => {});
   res.json({ ok: true, settings: store.get().settings, persistentState: store.exportPersistent() });
 });
 
@@ -568,9 +781,10 @@ if (fs.existsSync(WEB_DIST)) {
 }
 
 if (tuya.state().configured) {
-  tuya.refresh().catch(() => {});
-  setInterval(() => tuya.refresh().catch(() => {}), TUYA_REFRESH_MS).unref();
+  tuya.refresh().then(() => automationEngine.tick()).catch(() => {});
+  setInterval(() => tuya.refresh().then(() => automationEngine.tick()).catch(() => {}), TUYA_REFRESH_MS).unref();
 }
+setInterval(() => automationEngine.tick().catch(() => {}), 10_000).unref();
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`HomeHub ${VERSION} listening on :${PORT}`);

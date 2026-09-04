@@ -174,22 +174,24 @@ func Probe(cfg config.Config) []Status {
 		return nil
 	}
 	entries := arpEntries()
-	unresolved := false
-	for _, d := range cfg.Network.Devices {
-		if strings.TrimSpace(d.IP) == "" && strings.TrimSpace(d.MAC) != "" {
-			if _, ok := findARP(entries, d.MAC, ""); !ok {
-				unresolved = true
-			}
-		}
-	}
-	if unresolved && strings.TrimSpace(cfg.Network.Subnet) != "" {
+	// v0.14: always refresh the local /24 ARP view (rate-limited in warmARP),
+	// so automations can detect previously unknown devices, not only configured nodes.
+	if strings.TrimSpace(cfg.Network.Subnet) != "" {
 		warmARP(cfg.Network.Subnet)
 		entries = arpEntries()
 	}
 	out := make([]Status, 0, len(cfg.Network.Devices))
+	knownMAC := map[string]bool{}
+	knownIP := map[string]bool{}
 	for _, d := range cfg.Network.Devices {
 		ip := strings.TrimSpace(d.IP)
 		mac := normMAC(d.MAC)
+		if mac != "" {
+			knownMAC[mac] = true
+		}
+		if ip != "" {
+			knownIP[ip] = true
+		}
 		if ip == "" && mac != "" {
 			if e, ok := findARP(entries, mac, ""); ok {
 				ip = e.IP
@@ -227,6 +229,19 @@ func Probe(cfg config.Config) []Status {
 			st.Note = "Nem válaszol pingre vagy ismert admin portra"
 		}
 		out = append(out, st)
+	}
+	// Append active ARP neighbours that are not in the configured inventory.
+	// These entries are intentionally lightweight: they enable "new device" alerts
+	// without pretending we know whether a client is wired or Wi-Fi.
+	for _, e := range entries {
+		if !e.Complete || e.MAC == "" || knownMAC[e.MAC] || knownIP[e.IP] {
+			continue
+		}
+		id := "discovered-" + strings.ReplaceAll(e.MAC, ":", "")
+		out = append(out, Status{
+			ID: id, Name: "Ismeretlen hálózati eszköz", Kind: "discovered", Online: true,
+			IP: e.IP, MAC: e.MAC, Note: "Automatikusan észlelve az ARP táblában",
+		})
 	}
 	return out
 }

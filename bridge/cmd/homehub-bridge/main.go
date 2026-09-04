@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,12 +17,14 @@ import (
 	"homehub/bridge/internal/cloudstate"
 	"homehub/bridge/internal/config"
 	"homehub/bridge/internal/copyjob"
+	"homehub/bridge/internal/media"
 	"homehub/bridge/internal/network"
 	"homehub/bridge/internal/printer"
 	"homehub/bridge/internal/transmission"
+	"homehub/bridge/internal/vacuum"
 )
 
-const version = "0.12.0"
+const version = "0.16.1"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
@@ -37,8 +42,50 @@ type snapshot struct {
 	} `json:"wd"`
 	Printer         printer.Status                `json:"printer"`
 	Network         []network.Status              `json:"network,omitempty"`
+	Vacuum          vacuum.Status                 `json:"vacuum"`
+	Media           *media.Snapshot               `json:"media,omitempty"`
 	PersistentState json.RawMessage               `json:"persistentState,omitempty"`
 	LocalCopies     map[string]copyjob.CopyRecord `json:"localCopies,omitempty"`
+}
+
+func mediaConfig(cfg config.Config) media.Config {
+	roots := make([]media.Root, 0, len(cfg.Media.Roots))
+	for _, r := range cfg.Media.Roots {
+		roots = append(roots, media.Root{ID: r.ID, Name: r.Name, Path: r.Path})
+	}
+	return media.Config{
+		Enabled: cfg.Media.Enabled, Listen: cfg.Media.Listen, PublicBaseURL: cfg.Media.PublicBaseURL,
+		Secret: cfg.Media.Secret, MediaRoot: cfg.WD.MediaRoot, Roots: roots, MaxItems: cfg.Media.MaxItems,
+	}
+}
+
+var lastMediaScanAt time.Time
+var lastMediaSentAt time.Time
+var lastMediaFingerprint string
+
+func mediaFingerprint(s media.Snapshot) string {
+	h := sha256.New()
+	fmt.Fprintf(h, "%t|%t|%s|%d|%t|%s\n", s.Enabled, s.Online, s.PublicBaseURL, s.Count, s.Truncated, s.Error)
+	for _, item := range s.Items {
+		fmt.Fprintf(h, "%s|%d|%s\n", item.RelativePath, item.SizeBytes, item.ModifiedAt)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func mediaForSnapshot(cfg config.Config) *media.Snapshot {
+	now := time.Now()
+	if !lastMediaScanAt.IsZero() && now.Sub(lastMediaScanAt) < 60*time.Second {
+		return nil
+	}
+	lastMediaScanAt = now
+	s := media.Scan(mediaConfig(cfg))
+	fp := mediaFingerprint(s)
+	if fp == lastMediaFingerprint && !lastMediaSentAt.IsZero() && now.Sub(lastMediaSentAt) < 5*time.Minute {
+		return nil
+	}
+	lastMediaFingerprint = fp
+	lastMediaSentAt = now
+	return &s
 }
 
 func fsStats(path string) (free, total uint64, ok bool) {
@@ -106,6 +153,8 @@ func main() {
 		}
 	}
 
+	media.StartServer(mediaConfig(cfg))
+
 	cloud := api.New(cfg.ServerURL, cfg.Token, cfg.ServerTLSInsecure)
 	log.Printf("HomeHub bridge %s (%s) starting", cfg.BridgeID, version)
 
@@ -158,6 +207,10 @@ func runCheck(cfg config.Config, tr *transmission.Client) {
 	for _, ns := range network.Probe(cfg) {
 		log.Printf("NETWORK: %s kind=%s online=%t ip=%s latency=%.1fms", ns.Name, ns.Kind, ns.Online, ns.IP, ns.LatencyMs)
 	}
+	vs := vacuum.Probe(cfg)
+	log.Printf("XIAOMI VACUUM: configured=%t online=%t controlReady=%t ip=%s note=%s", vs.Configured, vs.Online, vs.ControlReady, vs.IP, vs.Note)
+	ms := media.Scan(mediaConfig(cfg))
+	log.Printf("MEDIA: enabled=%t online=%t items=%d url=%s error=%s", ms.Enabled, ms.Online, ms.Count, ms.PublicBaseURL, ms.Error)
 	if failed {
 		os.Exit(2)
 	}
@@ -246,6 +299,8 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 	s.WD.FreeBytes, s.WD.TotalBytes, s.WD.Online = fsStats(cfg.WD.MediaRoot)
 	s.Printer = printer.Probe(cfg)
 	s.Network = network.Probe(cfg)
+	s.Vacuum = vacuum.Probe(cfg)
+	s.Media = mediaForSnapshot(cfg)
 	s.PersistentState = localState.PersistentState
 	if copyState, err := copyjob.LoadState(effective.AutoCopy.StateFile); err == nil {
 		s.LocalCopies = copyState.Copied
@@ -318,6 +373,13 @@ func handle(cfg config.Config, tr *transmission.Client, cmd api.Command, progres
 			return "torrent and KD20 local data removed", true
 		}
 		return "torrent removed; KD20 local data kept", true
+	case "vacuum.start", "vacuum.pause", "vacuum.stop", "vacuum.dock":
+		action := strings.TrimPrefix(cmd.Type, "vacuum.")
+		msg, err := vacuum.Command(cfg, action)
+		if err != nil {
+			return err.Error(), false
+		}
+		return msg, true
 	case "torrent.copyToWd":
 		idFloat, ok := cmd.Payload["torrentId"].(float64)
 		if !ok {

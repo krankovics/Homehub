@@ -29,6 +29,20 @@
     "destination": "Filmek",
     "stateFile": "/DataVolume/homehub/autocopy-state.json"
   },
+  "media": {
+    "enabled": true,
+    "listen": "0.0.0.0:8788",
+    "publicBaseUrl": "http://192.168.1.180:8788",
+    "secret": "CHANGE-ME-LONG-RANDOM-SECRET",
+    "maxItems": 2500,
+    "roots": [
+      {
+        "id": "movies",
+        "name": "Filmek",
+        "path": "Filmek"
+      }
+    ]
+  },
   "printer": {
     "enabled": true,
     "host": "192.168.1.12",
@@ -38,6 +52,33 @@
       515,
       631
     ]
+  },
+  "xiaomiVacuum": {
+    "enabled": false,
+    "name": "Xiaomi Robot Vacuum E10",
+    "model": "xiaomi.vacuum.b112",
+    "ip": "",
+    "token": "",
+    "properties": [],
+    "actions": {
+      "start": {
+        "siid": 0,
+        "aiid": 0
+      },
+      "pause": {
+        "siid": 0,
+        "aiid": 0
+      },
+      "stop": {
+        "siid": 0,
+        "aiid": 0
+      },
+      "dock": {
+        "siid": 0,
+        "aiid": 0
+      }
+    },
+    "stateMap": {}
   },
   "network": {
     "enabled": true,
