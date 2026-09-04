@@ -1,0 +1,25 @@
+HomeHub v0.17.0 – release validation
+Date: 2026-09-04
+
+PASS — root/server/web version = 0.17.0
+PASS — Bridge version = 0.17.0
+PASS — go test ./...
+PASS — TL-SG108E V6 parser tests
+PASS — Linux ARMv7 Bridge build
+PASS — Linux amd64 Bridge build
+PASS — amd64 runtime version smoke: homehub-bridge 0.17.0 linux/amd64
+PASS — install-wd-os3.sh syntax
+PASS — upgrade-wd-os3.sh syntax
+PASS — configure-network-secrets.sh syntax
+PASS — config.example.json JSON
+PASS — config.wdmycloud.example.json JSON
+PASS — network-secrets.example.json JSON
+PASS — TypeScript/TSX parser validation: 8 source files
+PASS — automation input is normalized to explicit AutomationRuleInput after Zod validation
+PASS — live .env/config.json/network-secrets.json absent from release tree
+PASS — network credentials are loaded only by the WD Bridge and are not part of snapshots
+PASS — TL-SG108E adapter is read-only (status GET/login only; no config mutation path)
+PASS — KD20 effective RPC/SMB address follows MAC→ARP discovery
+PASS — stale KD20 CIFS source is remounted when effective IP changes
+
+NOTE — The artifact environment could not complete npm dependency installation because the npm registry is not reachable from the local build container. TS/TSX source parsing and structural validation were performed; the dependency-backed production build should be confirmed by the normal Render Docker build after commit.

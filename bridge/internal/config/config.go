@@ -20,6 +20,15 @@ type XiaomiMiotAction struct {
 	AIID int `json:"aiid"`
 }
 
+type NetworkCredential struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type NetworkSecrets struct {
+	Devices map[string]NetworkCredential `json:"devices"`
+}
+
 type XiaomiVacuumConfig struct {
 	Enabled    bool                 `json:"enabled"`
 	Name       string               `json:"name"`
@@ -88,18 +97,22 @@ type Config struct {
 		} `json:"roots"`
 	} `json:"media"`
 	Network struct {
-		Enabled bool   `json:"enabled"`
-		Subnet  string `json:"subnet"`
-		Devices []struct {
-			ID         string `json:"id"`
-			Name       string `json:"name"`
-			Kind       string `json:"kind"`
-			IP         string `json:"ip"`
-			MAC        string `json:"mac"`
-			AdminURL   string `json:"adminUrl"`
-			ProbePorts []int  `json:"probePorts"`
+		Enabled     bool   `json:"enabled"`
+		Subnet      string `json:"subnet"`
+		SecretsFile string `json:"secretsFile"`
+		Devices     []struct {
+			ID         string            `json:"id"`
+			Name       string            `json:"name"`
+			Kind       string            `json:"kind"`
+			IP         string            `json:"ip"`
+			MAC        string            `json:"mac"`
+			AdminURL   string            `json:"adminUrl"`
+			ProbePorts []int             `json:"probePorts"`
+			Adapter    string            `json:"adapter"`
+			PortNames  map[string]string `json:"portNames"`
 		} `json:"devices"`
 	} `json:"network"`
+	NetworkCredentials map[string]NetworkCredential `json:"-"`
 }
 
 func Load(path string, requireCloud bool) (Config, error) {
@@ -190,16 +203,28 @@ func Load(path string, requireCloud bool) (Config, error) {
 	if strings.TrimSpace(c.Network.Subnet) == "" {
 		c.Network.Subnet = "192.168.1.0/24"
 	}
+	if strings.TrimSpace(c.Network.SecretsFile) == "" {
+		c.Network.SecretsFile = "/DataVolume/homehub/network-secrets.json"
+	}
+	c.NetworkCredentials = map[string]NetworkCredential{}
+	if secretBytes, err := os.ReadFile(c.Network.SecretsFile); err == nil {
+		var secrets NetworkSecrets
+		if json.Unmarshal(secretBytes, &secrets) == nil && secrets.Devices != nil {
+			c.NetworkCredentials = secrets.Devices
+		}
+	}
 	if len(c.Network.Devices) == 0 {
 		c.Network.Enabled = true
 		type target = struct {
-			ID         string `json:"id"`
-			Name       string `json:"name"`
-			Kind       string `json:"kind"`
-			IP         string `json:"ip"`
-			MAC        string `json:"mac"`
-			AdminURL   string `json:"adminUrl"`
-			ProbePorts []int  `json:"probePorts"`
+			ID         string            `json:"id"`
+			Name       string            `json:"name"`
+			Kind       string            `json:"kind"`
+			IP         string            `json:"ip"`
+			MAC        string            `json:"mac"`
+			AdminURL   string            `json:"adminUrl"`
+			ProbePorts []int             `json:"probePorts"`
+			Adapter    string            `json:"adapter"`
+			PortNames  map[string]string `json:"portNames"`
 		}
 		c.Network.Devices = []target{
 			{ID: "technicolor-fga2233", Name: "Technicolor FGA2233", Kind: "gateway", IP: "192.168.1.1", AdminURL: "http://192.168.1.1", ProbePorts: []int{80, 443}},
@@ -212,13 +237,15 @@ func Load(path string, requireCloud bool) (Config, error) {
 	// Merge the known home topology into older config files too, so an existing
 	// /DataVolume/homehub/config.json does not have to be replaced on upgrade.
 	type networkTarget = struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		Kind       string `json:"kind"`
-		IP         string `json:"ip"`
-		MAC        string `json:"mac"`
-		AdminURL   string `json:"adminUrl"`
-		ProbePorts []int  `json:"probePorts"`
+		ID         string            `json:"id"`
+		Name       string            `json:"name"`
+		Kind       string            `json:"kind"`
+		IP         string            `json:"ip"`
+		MAC        string            `json:"mac"`
+		AdminURL   string            `json:"adminUrl"`
+		ProbePorts []int             `json:"probePorts"`
+		Adapter    string            `json:"adapter"`
+		PortNames  map[string]string `json:"portNames"`
 	}
 	hasDevice := func(id string) bool {
 		for _, d := range c.Network.Devices {
@@ -233,7 +260,7 @@ func Load(path string, requireCloud bool) (Config, error) {
 			c.Network.Devices = append(c.Network.Devices, d)
 		}
 	}
-	ensure(networkTarget{ID: "tl-sg108e", Name: "TL-SG108E", Kind: "switch", IP: "192.168.1.49", MAC: "78:8C:B5:5F:7F:04", AdminURL: "http://192.168.1.49", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "tl-sg108e", Name: "TL-SG108E", Kind: "switch", IP: "192.168.1.49", MAC: "78:8C:B5:5F:7F:04", AdminURL: "http://192.168.1.49", ProbePorts: []int{80, 443}, Adapter: "tplink-easy-smart"})
 	ensure(networkTarget{ID: "kd20", Name: "KD20 / oldnas", Kind: "nas", IP: "192.168.1.12", MAC: "80:EE:73:49:89:0C", AdminURL: "http://192.168.1.12", ProbePorts: []int{80, 9091}})
 	ensure(networkTarget{ID: "wd-my-cloud", Name: "WD My Cloud", Kind: "nas", IP: "192.168.1.180", MAC: "00:90:A9:D2:BB:EA", AdminURL: "http://192.168.1.180", ProbePorts: []int{80, 22}})
 	if strings.TrimSpace(c.Media.PublicBaseURL) == "" {
@@ -258,6 +285,9 @@ func Load(path string, requireCloud bool) (Config, error) {
 		c.XiaomiVacuum.StateMap = map[string]string{}
 	}
 	for i := range c.Network.Devices {
+		if c.Network.Devices[i].ID == "tl-sg108e" && strings.TrimSpace(c.Network.Devices[i].Adapter) == "" {
+			c.Network.Devices[i].Adapter = "tplink-easy-smart"
+		}
 		if len(c.Network.Devices[i].ProbePorts) == 0 {
 			c.Network.Devices[i].ProbePorts = []int{80, 443}
 		}

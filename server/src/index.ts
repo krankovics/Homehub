@@ -12,7 +12,7 @@ import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 
-const VERSION = "0.16.2";
+const VERSION = "0.17.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -207,6 +207,30 @@ function reconcileLocalCopies(snapshot: Snapshot) {
   });
 }
 
+function deriveNetworkEvents(previous: Snapshot["network"] = [], next: Snapshot["network"] = []) {
+  const events: import("./types.js").NetworkEvent[] = [];
+  const prevById = new Map((previous || []).map(n => [n.id, n]));
+  const now = new Date().toISOString();
+  for (const n of next || []) {
+    const p = prevById.get(n.id);
+    if (!p) continue;
+    if (p.online !== n.online) {
+      events.push({ id: crypto.randomUUID(), type: n.online ? "online" : "offline", networkId: n.id, deviceName: n.name, message: n.online ? `${n.name} újra elérhető${n.ip ? ` · ${n.ip}` : ""}` : `${n.name} nem elérhető`, createdAt: now });
+    }
+    if (p.ip && n.ip && p.ip !== n.ip) {
+      events.push({ id: crypto.randomUUID(), type: "ip_changed", networkId: n.id, deviceName: n.name, message: `${n.name} IP-címe megváltozott: ${p.ip} → ${n.ip}`, createdAt: now, fromValue: p.ip, toValue: n.ip });
+    }
+    const prevPorts = new Map((p.managed?.ports || []).map(x => [x.port, x]));
+    for (const port of n.managed?.ports || []) {
+      const old = prevPorts.get(port.port);
+      if (!old || old.speedMbps === port.speedMbps || (!old.linkUp && !port.linkUp)) continue;
+      const label = port.label ? ` (${port.label})` : "";
+      events.push({ id: crypto.randomUUID(), type: "link_speed", networkId: n.id, deviceName: n.name, port: port.port, message: `${n.name} Port ${port.port}${label}: ${old.linkUp ? `${old.speedMbps} Mbps` : "Link Down"} → ${port.linkUp ? `${port.speedMbps} Mbps` : "Link Down"}`, createdAt: now, fromValue: old.linkUp ? String(old.speedMbps) : "down", toValue: port.linkUp ? String(port.speedMbps) : "down" });
+    }
+  }
+  return events;
+}
+
 function publicState() {
   const s = store.get();
   const lastSeen = s.bridgeLastSeenAt ? new Date(s.bridgeLastSeenAt).getTime() : 0;
@@ -220,6 +244,7 @@ function publicState() {
     bridgeOnline: lastSeen > 0 && Date.now() - lastSeen <= BRIDGE_STALE_MS,
     settings: s.settings,
     copies: s.copies,
+    networkEvents: s.networkEvents.slice(-50).reverse(),
     recentCommands: s.commands.slice(-10).reverse().map((c) => ({
       id: c.id,
       type: c.type,
@@ -290,6 +315,8 @@ const automationTriggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("tuya.numeric"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["gt","gte","lt","lte","eq"]), value: z.number(), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("tuya.state"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["eq","neq"]), value: z.union([z.string(),z.number(),z.boolean()]), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("network.online_window"), networkId: z.string().min(1), after: z.string().regex(/^\d{2}:\d{2}$/), before: z.string().regex(/^\d{2}:\d{2}$/), forSeconds: z.number().int().min(0).max(86400).optional().default(0), timezone: z.string().optional().default("Europe/Budapest") }),
+  z.object({ type: z.literal("network.offline"), networkId: z.string().min(1), forSeconds: z.number().int().min(0).max(86400).optional().default(300) }),
+  z.object({ type: z.literal("network.link_below"), networkId: z.string().min(1), port: z.number().int().min(1).max(64), mbps: z.number().int().min(1).max(100000), forSeconds: z.number().int().min(0).max(86400).optional().default(120) }),
   z.object({ type: z.literal("network.new_device") }),
   z.object({ type: z.literal("schedule"), time: z.string().regex(/^\d{2}:\d{2}$/), days: z.array(z.number().int().min(0).max(6)).min(1).max(7), timezone: z.string().optional().default("Europe/Budapest") })
 ]);
@@ -309,7 +336,9 @@ const automationRuleInputSchema = z.object({
   actions: z.array(automationActionSchema).min(1).max(6), cooldownSeconds: z.number().int().min(0).max(604800).default(300)
 });
 
-function automationGateSafety(rule: z.infer<typeof automationRuleInputSchema>) {
+type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds">;
+
+function automationGateSafety(rule: AutomationRuleInput) {
   for (const action of rule.actions) {
     if (action.type !== "tuya.command") continue;
     const d = tuya.state().devices.find(x => x.id === action.deviceId);
@@ -322,9 +351,10 @@ app.get("/api/automations", userAuth, (_req, res) => res.json(publicState().auto
 app.post("/api/automations", userAuth, (req, res) => {
   const parsed = automationRuleInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  if (!automationGateSafety(parsed.data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
+  const data = parsed.data as AutomationRuleInput;
+  if (!automationGateSafety(data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
   const now = new Date().toISOString();
-  const rule: AutomationRule = { id: crypto.randomUUID(), ...parsed.data, createdAt: now, updatedAt: now };
+  const rule: AutomationRule = { id: crypto.randomUUID(), ...data, createdAt: now, updatedAt: now };
   store.mutate(s => { s.automations.push(rule); });
   automationEngine.tick().catch(() => {});
   res.status(201).json(rule);
@@ -333,11 +363,12 @@ app.put("/api/automations/:id", userAuth, (req, res) => {
   const id = paramString(req.params.id);
   const parsed = automationRuleInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  if (!automationGateSafety(parsed.data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
+  const data = parsed.data as AutomationRuleInput;
+  if (!automationGateSafety(data)) return res.status(400).json({ error: "gate_actions_are_blocked_in_automations" });
   let updated: AutomationRule | null = null;
   store.mutate(s => {
     const existing = s.automations.find(x => x.id === id); if (!existing) return;
-    updated = { ...existing, ...parsed.data, updatedAt: new Date().toISOString() };
+    updated = { ...existing, ...data, updatedAt: new Date().toISOString() };
     s.automations = s.automations.map(x => x.id === id ? updated! : x);
     s.automationRuntime[id] = {};
   });
@@ -602,7 +633,8 @@ const persistentBackupSchema = z.object({
   automations: z.array(z.any()).optional(),
   automationRuntime: z.record(z.any()).optional(),
   alerts: z.array(z.any()).optional(),
-  knownNetworkMacs: z.array(z.string()).optional()
+  knownNetworkMacs: z.array(z.string()).optional(),
+  networkEvents: z.array(z.any()).optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
@@ -653,7 +685,11 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
       note: z.string()
     }).optional(),
     network: z.array(z.object({
-      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string()
+      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), configuredIp: z.string().optional(), ipSource: z.string().optional(), ipChanged: z.boolean().optional(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string(),
+      managed: z.object({
+        adapter: z.string(), credentialsConfigured: z.boolean(), authOk: z.boolean(), model: z.string().optional(), hardware: z.string().optional(), firmware: z.string().optional(), gateway: z.string().optional(), error: z.string().optional(), updatedAt: z.string(),
+        ports: z.array(z.object({ port: z.number().int(), label: z.string().optional(), enabled: z.boolean(), linkUp: z.boolean(), speedMbps: z.number().int(), duplex: z.string(), configSpeed: z.string(), flowControl: z.boolean(), txPackets: z.number().nonnegative().optional(), rxPackets: z.number().nonnegative().optional(), health: z.string() })).optional()
+      }).optional()
     })).optional(),
     vacuum: z.object({
       configured: z.boolean(), online: z.boolean(), controlReady: z.boolean(), name: z.string(), model: z.string(), ip: z.string(),
@@ -675,6 +711,8 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
   if (snapshot.persistentState) store.importPersistent(snapshot.persistentState as PersistentBackup);
   store.mutate((s) => {
     const previousMedia = s.snapshot?.media;
+    const events = deriveNetworkEvents(s.snapshot?.network || [], snapshot.network || []);
+    if (events.length) s.networkEvents = [...s.networkEvents, ...events].slice(-200);
     s.snapshot = { ...snapshot, media: snapshot.media ?? previousMedia, persistentState: undefined, localCopies: undefined };
     s.bridgeLastSeenAt = new Date().toISOString();
   }, false);

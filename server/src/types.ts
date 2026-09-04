@@ -20,6 +20,16 @@ export type PrinterStatus = {
   note: string;
 };
 
+export type NetworkSwitchPort = {
+  port: number; label?: string; enabled: boolean; linkUp: boolean; speedMbps: number; duplex: string;
+  configSpeed: string; flowControl: boolean; txPackets?: number; rxPackets?: number; health: string;
+};
+
+export type NetworkManagedStatus = {
+  adapter: string; credentialsConfigured: boolean; authOk: boolean; model?: string; hardware?: string; firmware?: string; gateway?: string;
+  ports?: NetworkSwitchPort[]; error?: string; updatedAt: string;
+};
+
 export type NetworkStatus = {
   id: string;
   name: string;
@@ -27,10 +37,19 @@ export type NetworkStatus = {
   online: boolean;
   adminOnline?: boolean;
   ip: string;
+  configuredIp?: string;
+  ipSource?: string;
+  ipChanged?: boolean;
   mac: string;
   latencyMs: number;
   adminUrl: string;
   note: string;
+  managed?: NetworkManagedStatus;
+};
+
+export type NetworkEvent = {
+  id: string; type: "online" | "offline" | "ip_changed" | "link_speed"; networkId: string; deviceName: string;
+  message: string; createdAt: string; port?: number; fromValue?: string; toValue?: string;
 };
 
 export type VacuumStatus = {
@@ -150,6 +169,8 @@ export type AutomationTrigger =
   | { type: "tuya.numeric"; deviceId: string; code: string; operator: "gt" | "gte" | "lt" | "lte" | "eq"; value: number; forSeconds?: number }
   | { type: "tuya.state"; deviceId: string; code: string; operator: "eq" | "neq"; value: string | number | boolean; forSeconds?: number }
   | { type: "network.online_window"; networkId: string; after: string; before: string; forSeconds?: number; timezone?: string }
+  | { type: "network.offline"; networkId: string; forSeconds?: number }
+  | { type: "network.link_below"; networkId: string; port: number; mbps: number; forSeconds?: number }
   | { type: "network.new_device" }
   | { type: "schedule"; time: string; days: number[]; timezone?: string };
 
@@ -201,6 +222,7 @@ export type PersistentBackup = {
   automationRuntime?: Record<string, AutomationRuntime>;
   alerts?: AlertRecord[];
   knownNetworkMacs?: string[];
+  networkEvents?: NetworkEvent[];
 };
 
 export type State = {
@@ -213,5 +235,6 @@ export type State = {
   automationRuntime: Record<string, AutomationRuntime>;
   alerts: AlertRecord[];
   knownNetworkMacs: string[];
+  networkEvents: NetworkEvent[];
   persistentUpdatedAt: string | null;
 };

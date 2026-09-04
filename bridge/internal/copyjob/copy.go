@@ -37,7 +37,7 @@ func unescapeMountField(v string) string {
 	return replacer.Replace(v)
 }
 
-func mountedAt(path string) bool {
+func mountedSource(path string) (string, bool) {
 	want := filepath.Clean(path)
 	if f, err := os.Open("/proc/mounts"); err == nil {
 		defer f.Close()
@@ -50,9 +50,16 @@ func mountedAt(path string) bool {
 			mountPoint := filepath.Clean(unescapeMountField(fields[1]))
 			fsType := fields[2]
 			if mountPoint == want && (fsType == "cifs" || fsType == "smbfs") {
-				return true
+				return unescapeMountField(fields[0]), true
 			}
 		}
+	}
+	return "", false
+}
+
+func mountedAt(path string) bool {
+	if _, ok := mountedSource(path); ok {
+		return true
 	}
 	var st syscall.Statfs_t
 	if err := syscall.Statfs(path, &st); err != nil {
@@ -65,11 +72,21 @@ func EnsureMounted(cfg config.Config) error {
 	if err := os.MkdirAll(cfg.KD20.SMBMount, 0755); err != nil {
 		return err
 	}
-	if mountedAt(cfg.KD20.SMBMount) {
+	remote := fmt.Sprintf("//%s/%s", cfg.KD20.SMBHost, cfg.KD20.SMBShare)
+	if source, ok := mountedSource(cfg.KD20.SMBMount); ok {
+		if strings.EqualFold(strings.TrimRight(source, "/"), strings.TrimRight(remote, "/")) {
+			return nil
+		}
+		// v0.17: the KD20 may have received a new DHCP lease. Do not keep a
+		// stale CIFS mount pinned to the old address.
+		out, err := exec.Command("umount", cfg.KD20.SMBMount).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("unmount stale KD20 SMB %s (%s): %w: %s", source, remote, err, strings.TrimSpace(string(out)))
+		}
+	} else if mountedAt(cfg.KD20.SMBMount) {
 		return nil
 	}
 
-	remote := fmt.Sprintf("//%s/%s", cfg.KD20.SMBHost, cfg.KD20.SMBShare)
 	options := []string{"ro", "iocharset=utf8"}
 	if strings.TrimSpace(cfg.KD20.SMBUser) == "" || strings.EqualFold(strings.TrimSpace(cfg.KD20.SMBUser), "guest") {
 		options = append(options, "guest")

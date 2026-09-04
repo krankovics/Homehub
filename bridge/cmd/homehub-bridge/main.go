@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -24,7 +26,7 @@ import (
 	"homehub/bridge/internal/vacuum"
 )
 
-const version = "0.16.2"
+const version = "0.17.0"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
@@ -96,6 +98,47 @@ func fsStats(path string) (free, total uint64, ok bool) {
 	return s.Bavail * uint64(s.Bsize), s.Blocks * uint64(s.Bsize), true
 }
 
+func replaceURLHost(raw, ip string) string {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(ip) == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return raw
+	}
+	if port := u.Port(); port != "" {
+		u.Host = net.JoinHostPort(ip, port)
+	} else {
+		u.Host = ip
+	}
+	return u.String()
+}
+
+// effectiveNetworkConfig resolves infrastructure by stable MAC identity before
+// every cloud cycle. Fixed DHCP reservations are still recommended, but a
+// router restart or changed lease no longer leaves the KD20/media endpoints
+// pinned to an obsolete address.
+func effectiveNetworkConfig(cfg config.Config) config.Config {
+	out := cfg
+	oldKD := strings.TrimSpace(cfg.KD20.SMBHost)
+	if ip := network.ResolveDeviceIP(cfg, "kd20"); ip != "" {
+		out.KD20.SMBHost = ip
+		out.KD20.RPCURL = replaceURLHost(cfg.KD20.RPCURL, ip)
+		if strings.TrimSpace(cfg.Printer.Host) == "" || strings.TrimSpace(cfg.Printer.Host) == oldKD {
+			out.Printer.Host = ip
+		}
+		if strings.TrimSpace(cfg.Printer.AdminURL) == "" || (oldKD != "" && strings.Contains(cfg.Printer.AdminURL, oldKD)) {
+			out.Printer.AdminURL = replaceURLHost(cfg.Printer.AdminURL, ip)
+		}
+	}
+	// The media service runs on the WD itself. If the WD receives a new DHCP
+	// lease, publish signed links with its current local address.
+	if ip := network.LocalIPv4(cfg.Network.Subnet); ip != "" {
+		out.Media.PublicBaseURL = replaceURLHost(cfg.Media.PublicBaseURL, ip)
+	}
+	return out
+}
+
 func main() {
 	cfgPath := flag.String("config", "./config.json", "config file")
 	check := flag.Bool("check", false, "check WD/KD20 connectivity and exit")
@@ -116,10 +159,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	tr := transmission.New(cfg.KD20.RPCURL, cfg.KD20.Username, cfg.KD20.Password)
+	localEffective := effectiveNetworkConfig(cfg)
+	tr := transmission.New(localEffective.KD20.RPCURL, localEffective.KD20.Username, localEffective.KD20.Password)
 
 	if *check {
-		runCheck(cfg, tr)
+		runCheck(localEffective, tr)
 		return
 	}
 	if *list {
@@ -129,7 +173,7 @@ func main() {
 	if *copyID > 0 {
 		dest := *destination
 		if dest == "" {
-			dest = cfg.AutoCopy.Destination
+			dest = localEffective.AutoCopy.Destination
 		}
 		t, err := tr.Detail(*copyID)
 		if err != nil {
@@ -138,7 +182,7 @@ func main() {
 		if t.PercentDone < 1 {
 			log.Fatalf("torrent %d is not complete (%.1f%%)", t.ID, t.PercentDone*100)
 		}
-		msg, err := copyjob.Run(cfg, t, dest, nil)
+		msg, err := copyjob.Run(localEffective, t, dest, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -146,9 +190,11 @@ func main() {
 		return
 	}
 	if *watchLocal {
-		log.Printf("HomeHub bridge %s local watcher starting; destination=%s state=%s", version, cfg.AutoCopy.Destination, cfg.AutoCopy.StateFile)
+		log.Printf("HomeHub bridge %s local watcher starting; destination=%s state=%s", version, localEffective.AutoCopy.Destination, localEffective.AutoCopy.StateFile)
 		for {
-			runAutoCopy(cfg, tr)
+			effective := effectiveNetworkConfig(cfg)
+			tr = transmission.New(effective.KD20.RPCURL, effective.KD20.Username, effective.KD20.Password)
+			runAutoCopy(effective, tr)
 			time.Sleep(time.Duration(cfg.PollSeconds) * time.Second)
 		}
 	}
@@ -173,7 +219,7 @@ func main() {
 	}()
 
 	for {
-		runOnce(cfg, tr, cloud)
+		runOnce(cfg, cloud)
 		if *once {
 			return
 		}
@@ -272,9 +318,10 @@ func runAutoCopy(cfg config.Config, tr *transmission.Client) {
 	}
 }
 
-func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
+func runOnce(cfg config.Config, cloud *api.Client) {
 	localState := cloudstate.Load(cfg.CloudStateFile)
-	effective := cfg
+	effective := effectiveNetworkConfig(cfg)
+	tr := transmission.New(effective.KD20.RPCURL, effective.KD20.Username, effective.KD20.Password)
 	if localState.Settings != nil {
 		effective.AutoCopy.Enabled = localState.Settings.AutoCopyEnabled
 		if localState.Settings.AutoCopyDestination != "" {
@@ -288,19 +335,19 @@ func runOnce(cfg config.Config, tr *transmission.Client, cloud *api.Client) {
 	var s snapshot
 	s.BridgeID = cfg.BridgeID
 	s.Timestamp = time.Now().UTC().Format(time.RFC3339)
-	s.KD20.RPCURL = cfg.KD20.RPCURL
+	s.KD20.RPCURL = effective.KD20.RPCURL
 	s.KD20.Online = terr == nil
 	if terr == nil {
 		s.KD20.Torrents = ts
 	} else {
 		log.Printf("KD20: %v", terr)
 	}
-	s.WD.MediaRoot = cfg.WD.MediaRoot
-	s.WD.FreeBytes, s.WD.TotalBytes, s.WD.Online = fsStats(cfg.WD.MediaRoot)
-	s.Printer = printer.Probe(cfg)
-	s.Network = network.Probe(cfg)
-	s.Vacuum = vacuum.Probe(cfg)
-	s.Media = mediaForSnapshot(cfg)
+	s.WD.MediaRoot = effective.WD.MediaRoot
+	s.WD.FreeBytes, s.WD.TotalBytes, s.WD.Online = fsStats(effective.WD.MediaRoot)
+	s.Printer = printer.Probe(effective)
+	s.Network = network.Probe(effective)
+	s.Vacuum = vacuum.Probe(effective)
+	s.Media = mediaForSnapshot(effective)
 	s.PersistentState = localState.PersistentState
 	if copyState, err := copyjob.LoadState(effective.AutoCopy.StateFile); err == nil {
 		s.LocalCopies = copyState.Copied

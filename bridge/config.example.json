@@ -143,8 +143,23 @@
           80,
           443
         ]
+      },
+      {
+        "id": "tl-sg108e",
+        "name": "TL-SG108E",
+        "kind": "switch",
+        "ip": "192.168.1.49",
+        "mac": "78:8C:B5:5F:7F:04",
+        "adminUrl": "http://192.168.1.49",
+        "probePorts": [
+          80,
+          443
+        ],
+        "adapter": "tplink-easy-smart",
+        "portNames": {}
       }
-    ]
+    ],
+    "secretsFile": "/DataVolume/homehub/network-secrets.json"
   },
   "cloudStateFile": "/DataVolume/homehub/server-state.json"
 }

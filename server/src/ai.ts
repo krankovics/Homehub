@@ -219,7 +219,10 @@ export class AIService {
       status: d.status.slice(0, 60).map(s => ({ code: s.code, value: s.value })),
       functions: includeFunctions ? d.functions.slice(0, 60).map(f => ({ code: f.code, type: f.type, values: String(f.values || "").slice(0, 700) })) : undefined
     }));
-    const network = (state.snapshot?.network || []).slice(0, 120).map(n => ({ id: n.id, name: n.name, kind: n.kind, online: n.online, ip: n.ip, mac: n.mac }));
+    const network = (state.snapshot?.network || []).slice(0, 120).map(n => ({
+      id: n.id, name: n.name, kind: n.kind, online: n.online, ip: n.ip, configuredIp: n.configuredIp, ipChanged: n.ipChanged, mac: n.mac,
+      managed: n.managed ? { adapter: n.managed.adapter, authOk: n.managed.authOk, hardware: n.managed.hardware, firmware: n.managed.firmware, error: n.managed.error, ports: (n.managed.ports || []).map(p => ({ port: p.port, label: p.label, linkUp: p.linkUp, speedMbps: p.speedMbps, duplex: p.duplex, health: p.health })) } : undefined
+    }));
     const vacuum = state.snapshot?.vacuum ? {
       configured: state.snapshot.vacuum.configured,
       online: state.snapshot.vacuum.online,
@@ -237,6 +240,7 @@ export class AIService {
       bridgeOnline: Boolean(state.bridgeLastSeenAt && Date.now() - new Date(state.bridgeLastSeenAt).getTime() < 90_000),
       devices,
       network,
+      networkEvents: state.networkEvents.slice(-30).map(e => ({ type: e.type, deviceName: e.deviceName, message: e.message, createdAt: e.createdAt })),
       vacuum,
       automations: state.automations.map(r => ({ id: r.id, name: r.name, enabled: r.enabled, trigger: r.trigger, actions: r.actions, lastTriggeredAt: r.lastTriggeredAt })),
       alerts: state.alerts.slice(-30).map(a => ({ subject: a.subject, message: a.message, createdAt: a.createdAt, emailSent: a.emailSent }))

@@ -168,6 +168,15 @@ export class AutomationEngine {
       const local = fmtLocal(now, trigger.timezone || DEFAULT_TZ);
       active = Boolean(n?.online && inWindow(local.minutes, trigger.after, trigger.before));
       detail = n ? `${n.name} online (${n.ip || n.mac}) · időablak ${trigger.after}–${trigger.before}` : `Hálózati eszköz nem található: ${trigger.networkId}`;
+    } else if (trigger.type === "network.offline") {
+      const n = (this.store.get().snapshot?.network || []).find(x => x.id === trigger.networkId);
+      active = Boolean(n && !n.online);
+      detail = n ? `${n.name} offline (${n.ip || n.mac || "ismeretlen cím"})` : `Hálózati eszköz nem található: ${trigger.networkId}`;
+    } else if (trigger.type === "network.link_below") {
+      const n = (this.store.get().snapshot?.network || []).find(x => x.id === trigger.networkId);
+      const port = n?.managed?.ports?.find(p => p.port === trigger.port);
+      active = Boolean(n?.online && port?.linkUp && port.speedMbps > 0 && port.speedMbps < trigger.mbps);
+      detail = n ? `${n.name} Port ${trigger.port}${port?.label ? ` (${port.label})` : ""}: ${port?.linkUp ? `${port.speedMbps} Mbps` : "Link Down"} · küszöb ${trigger.mbps} Mbps` : `Hálózati eszköz nem található: ${trigger.networkId}`;
     }
 
     if (!active) {

@@ -16,6 +16,7 @@ const initialState: State = {
   automationRuntime: {},
   alerts: [],
   knownNetworkMacs: [],
+  networkEvents: [],
   persistentUpdatedAt: null
 };
 
@@ -39,6 +40,7 @@ export class Store {
           automationRuntime: disk.automationRuntime || {},
           alerts: Array.isArray(disk.alerts) ? disk.alerts : [],
           knownNetworkMacs: Array.isArray(disk.knownNetworkMacs) ? disk.knownNetworkMacs : [],
+          networkEvents: Array.isArray(disk.networkEvents) ? disk.networkEvents : [],
           persistentUpdatedAt: disk.persistentUpdatedAt || null
         };
       } catch {
@@ -71,7 +73,8 @@ export class Store {
       automations: structuredClone(this.state.automations),
       automationRuntime: structuredClone(this.state.automationRuntime),
       alerts: structuredClone(this.state.alerts.slice(-200)),
-      knownNetworkMacs: structuredClone(this.state.knownNetworkMacs)
+      knownNetworkMacs: structuredClone(this.state.knownNetworkMacs),
+      networkEvents: structuredClone(this.state.networkEvents.slice(-200))
     };
   }
 
@@ -86,6 +89,7 @@ export class Store {
     this.state.automationRuntime = backup.automationRuntime || {};
     this.state.alerts = Array.isArray(backup.alerts) ? backup.alerts.slice(-200) : [];
     this.state.knownNetworkMacs = Array.isArray(backup.knownNetworkMacs) ? backup.knownNetworkMacs : [];
+    this.state.networkEvents = Array.isArray(backup.networkEvents) ? backup.networkEvents.slice(-200) : [];
     this.state.persistentUpdatedAt = backup.persistentUpdatedAt;
     this.save();
     return true;

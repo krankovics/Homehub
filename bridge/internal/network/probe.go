@@ -16,16 +16,20 @@ import (
 )
 
 type Status struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Kind        string  `json:"kind"`
-	Online      bool    `json:"online"`
-	AdminOnline bool    `json:"adminOnline"`
-	IP          string  `json:"ip"`
-	MAC         string  `json:"mac"`
-	LatencyMs   float64 `json:"latencyMs"`
-	AdminURL    string  `json:"adminUrl"`
-	Note        string  `json:"note"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Kind         string         `json:"kind"`
+	Online       bool           `json:"online"`
+	AdminOnline  bool           `json:"adminOnline"`
+	IP           string         `json:"ip"`
+	ConfiguredIP string         `json:"configuredIp,omitempty"`
+	IPSource     string         `json:"ipSource,omitempty"`
+	IPChanged    bool           `json:"ipChanged,omitempty"`
+	MAC          string         `json:"mac"`
+	LatencyMs    float64        `json:"latencyMs"`
+	AdminURL     string         `json:"adminUrl"`
+	Note         string         `json:"note"`
+	Managed      *ManagedStatus `json:"managed,omitempty"`
 }
 
 var scanMu sync.Mutex
@@ -184,21 +188,27 @@ func Probe(cfg config.Config) []Status {
 	knownMAC := map[string]bool{}
 	knownIP := map[string]bool{}
 	for _, d := range cfg.Network.Devices {
-		ip := strings.TrimSpace(d.IP)
+		configuredIP := strings.TrimSpace(d.IP)
+		ip := configuredIP
 		mac := normMAC(d.MAC)
+		ipSource := "config"
 		if mac != "" {
 			knownMAC[mac] = true
+			// v0.17: MAC identity wins over a stale DHCP address. This lets the
+			// Bridge recover automatically after router/DHCP restarts.
+			if e, ok := findARP(entries, mac, ""); ok && e.Complete && e.IP != "" {
+				ip = e.IP
+				ipSource = "arp-mac"
+			}
 		}
 		if ip != "" {
 			knownIP[ip] = true
 		}
-		if ip == "" && mac != "" {
-			if e, ok := findARP(entries, mac, ""); ok {
-				ip = e.IP
-			}
+		if configuredIP != "" {
+			knownIP[configuredIP] = true
 		}
-		st := Status{ID: d.ID, Name: d.Name, Kind: d.Kind, IP: ip, MAC: mac, AdminURL: d.AdminURL}
-		if st.AdminURL == "" && ip != "" {
+		st := Status{ID: d.ID, Name: d.Name, Kind: d.Kind, IP: ip, ConfiguredIP: configuredIP, IPSource: ipSource, IPChanged: configuredIP != "" && ip != "" && configuredIP != ip, MAC: mac, AdminURL: d.AdminURL}
+		if ip != "" && (st.AdminURL == "" || st.IPChanged) {
 			st.AdminURL = "http://" + ip
 		}
 		if ip == "" {
@@ -228,6 +238,12 @@ func Probe(cfg config.Config) []Status {
 		default:
 			st.Note = "Nem válaszol pingre vagy ismert admin portra"
 		}
+		if st.IPChanged {
+			st.Note = fmt.Sprintf("IP változott: %s → %s · %s", configuredIP, ip, st.Note)
+		}
+		if st.Online && strings.EqualFold(strings.TrimSpace(d.Adapter), "tplink-easy-smart") {
+			st.Managed = readEasySmart(ip, cfg.NetworkCredentials[d.ID], d.PortNames)
+		}
 		out = append(out, st)
 	}
 	// Append active ARP neighbours that are not in the configured inventory.
@@ -244,4 +260,52 @@ func Probe(cfg config.Config) []Status {
 		})
 	}
 	return out
+}
+
+// ResolveDeviceIP returns the current LAN address for a configured device.
+// A MAC match from ARP takes precedence over the configured IP so DHCP
+// changes can heal without editing HomeHub configuration.
+func ResolveDeviceIP(cfg config.Config, deviceID string) string {
+	if strings.TrimSpace(cfg.Network.Subnet) != "" {
+		warmARP(cfg.Network.Subnet)
+	}
+	entries := arpEntries()
+	for _, d := range cfg.Network.Devices {
+		if d.ID != deviceID {
+			continue
+		}
+		mac := normMAC(d.MAC)
+		if mac != "" {
+			if e, ok := findARP(entries, mac, ""); ok && e.Complete && e.IP != "" {
+				return e.IP
+			}
+		}
+		return strings.TrimSpace(d.IP)
+	}
+	return ""
+}
+
+// LocalIPv4 returns a non-loopback local address inside the configured subnet.
+func LocalIPv4(subnet string) string {
+	_, ipnet, err := net.ParseCIDR(strings.TrimSpace(subnet))
+	if err != nil {
+		return ""
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip4 := ip.To4(); ip4 != nil && !ip4.IsLoopback() && ipnet.Contains(ip4) {
+			return ip4.String()
+		}
+	}
+	return ""
 }
