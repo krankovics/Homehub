@@ -6,14 +6,15 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile } from "./types.js";
-import { TuyaService } from "./tuya.js";
+import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile, DeviceIdentityOverride } from "./types.js";
+import { TuyaService, type TuyaDevice, type TuyaReportLog } from "./tuya.js";
 import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
+import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 
-const VERSION = "0.19.0";
+const VERSION = "0.20.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -28,6 +29,8 @@ const TUYA_ACCESS_ID = process.env.TUYA_ACCESS_ID || "";
 const TUYA_ACCESS_SECRET = process.env.TUYA_ACCESS_SECRET || "";
 const TUYA_API_ENDPOINT = process.env.TUYA_API_ENDPOINT || "https://openapi.tuyaeu.com";
 const TUYA_REFRESH_MS = Number(process.env.TUYA_REFRESH_MS || 15_000);
+const TUYA_LOG_REFRESH_MS = Math.max(60_000, Number(process.env.TUYA_LOG_REFRESH_MS || 300_000));
+const TUYA_LOG_LOOKBACK_MS = Math.max(60_000, Number(process.env.TUYA_LOG_LOOKBACK_MS || 15 * 60_000));
 const tuya = new TuyaService(TUYA_API_ENDPOINT, TUYA_ACCESS_ID, TUYA_ACCESS_SECRET);
 const mailer = new Mailer();
 
@@ -235,8 +238,10 @@ function deriveNetworkEvents(previous: Snapshot["network"] = [], next: Snapshot[
 function publicState() {
   const s = store.get();
   const lastSeen = s.bridgeLastSeenAt ? new Date(s.bridgeLastSeenAt).getTime() : 0;
+  const enrichedNetwork = enrichNetworkIdentities(s.snapshot?.network || [], tuya.state().devices || [], s.deviceIdentityOverrides);
   const snapshot = s.snapshot ? {
     ...s.snapshot,
+    network: enrichedNetwork,
     media: s.snapshot.media ? { ...s.snapshot.media, items: [] } : undefined
   } : null;
   return {
@@ -384,6 +389,33 @@ app.get("/api/history", userAuth, (req, res) => {
   const limit = Math.max(1, Math.min(2000, Number(req.query.limit || 500) || 500));
   const events = store.get().history.filter(e => (!category || e.category === category) && new Date(e.createdAt).getTime() >= from && new Date(e.createdAt).getTime() <= to).slice(-limit).reverse();
   res.json({ events });
+});
+
+const networkIdentityInput = z.object({
+  name: z.string().trim().min(1).max(120),
+  kind: z.string().trim().max(80).optional().default(""),
+  owner: z.string().trim().max(80).optional().default(""),
+  note: z.string().trim().max(500).optional().default("")
+});
+app.put("/api/network/identity/:mac", userAuth, (req, res) => {
+  const parsed = networkIdentityInput.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const mac = normalizeMac(paramString(req.params.mac));
+  if (!/^[0-9a-f]{2}(?::[0-9a-f]{2}){5}$/.test(mac)) return res.status(400).json({ error: "invalid_mac" });
+  const now = new Date().toISOString();
+  let saved: DeviceIdentityOverride | undefined;
+  store.mutate(s => {
+    const old = s.deviceIdentityOverrides[mac];
+    saved = { mac, name: parsed.data.name, kind: parsed.data.kind || undefined, owner: parsed.data.owner || undefined, note: parsed.data.note || undefined, createdAt: old?.createdAt || now, updatedAt: now };
+    s.deviceIdentityOverrides[mac] = saved;
+    pushHistory(s, { category: "network", type: "network.identity", entityId: `mac:${mac}`, entityName: saved.name, message: `${saved.name}: hálózati eszköz azonosítva (${mac}).`, createdAt: now, data: { mac, kind: saved.kind, owner: saved.owner } });
+  });
+  res.json(saved);
+});
+app.delete("/api/network/identity/:mac", userAuth, (req, res) => {
+  const mac = normalizeMac(paramString(req.params.mac));
+  store.mutate(s => { delete s.deviceIdentityOverrides[mac]; });
+  res.json({ ok: true });
 });
 
 app.post("/api/vacuum/command", userAuth, (req, res) => {
@@ -596,7 +628,7 @@ function validateTuyaCommand(device: ReturnType<typeof tuya.state>["devices"][nu
 app.get("/api/smart-home/devices/:id/debug", userAuth, (req, res) => {
   const device = tuya.state().devices.find((d) => d.id === paramString(req.params.id));
   if (!device) return res.status(404).json({ error: "tuya_device_not_found" });
-  res.json({ id: device.id, name: device.name, profile: device.profile || null, productName: device.productName, category: device.category, online: device.online, status: device.status, functions: device.functions, statusSpec: device.statusSpec });
+  res.json({ id: device.id, name: device.name, profile: device.profile || null, productName: device.productName, category: device.category, online: device.online, mac: device.mac || null, uuid: device.uuid || null, serialNumber: device.serialNumber || null, status: device.status, functions: device.functions, statusSpec: device.statusSpec });
 });
 
 app.post("/api/smart-home/devices/:id/command", userAuth, async (req, res) => {
@@ -728,7 +760,9 @@ const persistentBackupSchema = z.object({
   people: z.array(z.any()).optional(),
   history: z.array(z.any()).optional(),
   presenceRuntime: z.record(z.any()).optional(),
-  historySampleKey: z.string().optional()
+  historySampleKey: z.string().optional(),
+  deviceIdentityOverrides: z.record(z.any()).optional(),
+  tuyaLogCursor: z.record(z.number()).optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
@@ -933,6 +967,45 @@ if (fs.existsSync(WEB_DIST)) {
   });
 }
 
+function tuyaLogCodes(device: TuyaDevice) {
+  const candidates = [...new Set([...(device.status || []).map(x => x.code), ...(device.statusSpec || []).map(x => x.code)])];
+  const useful = candidates.filter(code => /switch|power|current|voltage|energy|electric|door|gate|open|close|temp|humid|state|work|alarm|fault|signal|battery|charge|kwh/i.test(code));
+  return (useful.length ? useful : candidates).slice(0, 40);
+}
+
+function tuyaLogHistory(device: TuyaDevice, log: TuyaReportLog) {
+  const text = `${device.name} ${device.productName} ${log.code}`.toLowerCase();
+  const category = /gate|door|open|close|mygate/.test(text) ? "security" : /feyree|charger|charge|power|current|voltage|energy|kwh/.test(text) ? "energy" : "smart";
+  const createdAt = new Date(log.eventTime).toISOString();
+  const value = typeof log.value === "string" ? log.value : JSON.stringify(log.value);
+  return { category: category as "security" | "energy" | "smart", type: `tuya.log.${log.code}`, entityId: device.id, entityName: device.name, message: `${device.name}: ${log.code} = ${value}`, createdAt, data: { code: log.code, value: log.value, source: "tuya-report-log" } };
+}
+
+async function refreshTuyaLogs() {
+  if (!tuya.state().configured || !tuya.state().online) return;
+  const end = Date.now();
+  for (const device of tuya.state().devices.slice(0, 40)) {
+    const codes = tuyaLogCodes(device);
+    if (!codes.length) continue;
+    const currentCursor = Number(store.get().tuyaLogCursor[device.id] || 0);
+    const start = currentCursor > 0 ? Math.max(currentCursor + 1, end - 24 * 60 * 60_000) : end - TUYA_LOG_LOOKBACK_MS;
+    try {
+      const logs = (await tuya.reportLogs(device.id, codes, start, end)).sort((a,b) => a.eventTime - b.eventTime);
+      if (!logs.length) continue;
+      store.mutate(s => {
+        const baseCursor = Number(s.tuyaLogCursor[device.id] || 0);
+        let cursor = baseCursor;
+        for (const log of logs) {
+          if (log.eventTime <= baseCursor) continue;
+          pushHistory(s, tuyaLogHistory(device, log));
+          cursor = Math.max(cursor, log.eventTime);
+        }
+        s.tuyaLogCursor[device.id] = cursor;
+      });
+    } catch { /* Device Log entitlement may be unavailable for some products; current-state history remains active. */ }
+  }
+}
+
 async function refreshTuyaWithHistory() {
   const before = structuredClone(tuya.state().devices || []);
   await tuya.refresh();
@@ -944,6 +1017,8 @@ async function refreshTuyaWithHistory() {
 if (tuya.state().configured) {
   refreshTuyaWithHistory().catch(() => {});
   setInterval(() => refreshTuyaWithHistory().catch(() => {}), TUYA_REFRESH_MS).unref();
+  setTimeout(() => refreshTuyaLogs().catch(() => {}), 8_000).unref();
+  setInterval(() => refreshTuyaLogs().catch(() => {}), TUYA_LOG_REFRESH_MS).unref();
 }
 setInterval(() => automationEngine.tick().catch(() => {}), 10_000).unref();
 

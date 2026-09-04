@@ -1,6 +1,7 @@
 import type { AutomationAction, AutomationTrigger } from "./types.js";
 import { Store } from "./store.js";
 import { TuyaService } from "./tuya.js";
+import { enrichNetworkIdentities } from "./identity.js";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5";
@@ -219,8 +220,8 @@ export class AIService {
       status: d.status.slice(0, 60).map(s => ({ code: s.code, value: s.value })),
       functions: includeFunctions ? d.functions.slice(0, 60).map(f => ({ code: f.code, type: f.type, values: String(f.values || "").slice(0, 700) })) : undefined
     }));
-    const network = (state.snapshot?.network || []).slice(0, 120).map(n => ({
-      id: n.id, name: n.name, kind: n.kind, online: n.online, ip: n.ip, configuredIp: n.configuredIp, ipChanged: n.ipChanged, mac: n.mac,
+    const network = enrichNetworkIdentities(state.snapshot?.network || [], smart.devices || [], state.deviceIdentityOverrides).slice(0, 120).map(n => ({
+      id: n.id, name: n.name, kind: n.kind, online: n.online, ip: n.ip, configuredIp: n.configuredIp, ipChanged: n.ipChanged, mac: n.mac, identity: n.identity,
       managed: n.managed ? { adapter: n.managed.adapter, authOk: n.managed.authOk, hardware: n.managed.hardware, firmware: n.managed.firmware, error: n.managed.error, ports: (n.managed.ports || []).map(p => ({ port: p.port, label: p.label, linkUp: p.linkUp, speedMbps: p.speedMbps, duplex: p.duplex, health: p.health })) } : undefined
     }));
     const vacuum = state.snapshot?.vacuum ? {

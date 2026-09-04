@@ -1,0 +1,27 @@
+HomeHub v0.20.0 validation
+
+PASS — root package version = 0.20.0
+PASS — web package version = 0.20.0
+PASS — server package version = 0.20.0
+PASS — Bridge source version = 0.20.0
+PASS — service worker cache = homehub-v0.20.0
+PASS — Go test ./... completed successfully
+PASS — linux/armv7 static binary present
+PASS — linux/amd64 static binary present
+PASS — amd64 binary reports: homehub-bridge 0.20.0 linux/amd64
+PASS — all server/web TS/TSX source files transpiled without syntax errors (10 files)
+PASS — identity runtime smoke: confirmed family-device MAC mapping
+PASS — identity runtime smoke: old ESP/Tuya embedded-MAC fallback
+PASS — identity runtime smoke: Tuya factory MAC mapping
+PASS — identity runtime smoke: duplicate/proxy MAC detection
+PASS — focused secret scan: no known plaintext Wi-Fi/API-key pattern found
+PASS — .env.example contains TUYA_LOG_REFRESH_MS and TUYA_LOG_LOOKBACK_MS
+PASS — release/install/device-identity documentation included
+
+Additional type validation completed during development:
+PASS — strict core typecheck for types.ts + tuya.ts + identity.ts
+PASS — strict persistent-store typecheck for types.ts + store.ts
+PASS — strict AI integration typecheck for types/store/tuya/identity/ai
+
+Environment limitation:
+A full npm workspace dependency-aware build was not completed in the artifact environment because the required npm packages were not locally available and registry installation timed out. The modified TypeScript/TSX sources passed syntax/transpile checks and the core changed modules passed strict targeted typechecks. The Render build is the final full dependency-aware TypeScript/Vite compilation check.

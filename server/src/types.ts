@@ -30,6 +30,18 @@ export type NetworkManagedStatus = {
   ports?: NetworkSwitchPort[]; error?: string; updatedAt: string;
 };
 
+export type NetworkIdentity = {
+  source: "configured" | "manual" | "known_device" | "tuya_factory" | "tuya_device_id" | "proxy";
+  confidence: number;
+  label: string;
+  owner?: string;
+  deviceType?: string;
+  tuyaDeviceId?: string;
+  tuyaProductName?: string;
+  matchedMac?: string;
+  note?: string;
+};
+
 export type NetworkStatus = {
   id: string;
   name: string;
@@ -46,6 +58,19 @@ export type NetworkStatus = {
   note: string;
   managed?: NetworkManagedStatus;
   visibility?: string;
+  rawName?: string;
+  identity?: NetworkIdentity;
+};
+
+
+export type DeviceIdentityOverride = {
+  mac: string;
+  name: string;
+  kind?: string;
+  owner?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type NetworkEvent = {
@@ -282,6 +307,8 @@ export type PersistentBackup = {
   history?: HistoryEvent[];
   presenceRuntime?: Record<string, PresenceStatus>;
   historySampleKey?: string;
+  deviceIdentityOverrides?: Record<string, DeviceIdentityOverride>;
+  tuyaLogCursor?: Record<string, number>;
 };
 
 export type State = {
@@ -299,5 +326,7 @@ export type State = {
   history: HistoryEvent[];
   presenceRuntime: Record<string, PresenceStatus>;
   historySampleKey: string;
+  deviceIdentityOverrides: Record<string, DeviceIdentityOverride>;
+  tuyaLogCursor: Record<string, number>;
   persistentUpdatedAt: string | null;
 };

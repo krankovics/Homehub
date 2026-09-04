@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 
 export type TuyaStatusPoint = { code: string; value: unknown };
 export type TuyaSpecPoint = { code: string; type: string; values: string; dp_id?: number; dpId?: number };
+export type TuyaFactoryInfo = { id: string; uuid?: string; sn?: string; mac?: string };
+export type TuyaReportLog = { code: string; value: unknown; eventTime: number };
 export type TuyaDevice = {
   id: string;
   name: string;
@@ -10,6 +12,9 @@ export type TuyaDevice = {
   productName: string;
   productId?: string;
   homeId?: string;
+  mac?: string;
+  uuid?: string;
+  serialNumber?: string;
   profile?: "mygate" | "feyree" | "aircon";
   status: TuyaStatusPoint[];
   functions: TuyaSpecPoint[];
@@ -125,6 +130,53 @@ export class TuyaClient {
       throw err;
     }
   }
+  private async factoryInfos(deviceIds: string[]): Promise<Map<string, TuyaFactoryInfo>> {
+    const out = new Map<string, TuyaFactoryInfo>();
+    for (let i = 0; i < deviceIds.length; i += 20) {
+      const chunk = deviceIds.slice(i, i + 20).filter(Boolean);
+      if (!chunk.length) continue;
+      const qs = new URLSearchParams({ device_ids: chunk.join(",") }).toString();
+      let list: any[] = [];
+      try {
+        list = await this.request<any[]>("GET", `/v1.0/iot-03/devices/factory-infos?${qs}`);
+      } catch {
+        try { list = await this.request<any[]>("GET", `/v1.0/devices/factory-infos?${qs}`); }
+        catch { list = []; }
+      }
+      for (const row of Array.isArray(list) ? list : []) {
+        const id = String(row?.id || "");
+        if (!id) continue;
+        out.set(id, {
+          id,
+          uuid: row?.uuid ? String(row.uuid) : undefined,
+          sn: row?.sn ? String(row.sn) : undefined,
+          mac: row?.mac ? String(row.mac).toLowerCase().replace(/-/g, ":") : undefined
+        });
+      }
+    }
+    return out;
+  }
+
+  async reportLogs(deviceId: string, codes: string[], startTime: number, endTime: number): Promise<TuyaReportLog[]> {
+    const cleanCodes = [...new Set(codes.map(x => String(x || "").trim()).filter(Boolean))].slice(0, 50);
+    if (!cleanCodes.length) return [];
+    const qs = new URLSearchParams({
+      codes: cleanCodes.join(","),
+      start_time: String(Math.max(0, Math.floor(startTime))),
+      end_time: String(Math.max(0, Math.floor(endTime))),
+      size: "100"
+    });
+    let result: any;
+    try {
+      result = await this.request<any>("GET", `/v2.1/cloud/thing/${encodeURIComponent(deviceId)}/report-logs?${qs.toString()}`);
+    } catch {
+      result = await this.request<any>("GET", `/v1.0/iot-03/devices/${encodeURIComponent(deviceId)}/report-logs?${qs.toString()}`);
+    }
+    return (Array.isArray(result?.logs) ? result.logs : []).map((x: any) => ({
+      code: String(x?.code || ""), value: x?.value, eventTime: Number(x?.event_time || x?.eventTime || 0)
+    })).filter((x: TuyaReportLog) => Boolean(x.code) && Number.isFinite(x.eventTime) && x.eventTime > 0);
+  }
+
   private async specs(deviceId: string) {
     const cached = this.specCache.get(deviceId);
     if (cached && Date.now() - cached.at < 60 * 60_000) return cached;
@@ -150,6 +202,7 @@ export class TuyaClient {
       if (!result?.has_more || !result.last_row_key) break;
       last = result.last_row_key;
     }
+    const factory = await this.factoryInfos(all.map(d => String(d?.id || "")).filter(Boolean));
     const devices: TuyaDevice[] = [];
     const workers = Math.min(5, Math.max(1, all.length)); let index = 0;
     await Promise.all(Array.from({ length: workers }, async () => {
@@ -160,10 +213,12 @@ export class TuyaClient {
         const productName = String(d.product_name || "");
         const category = String(d.category || "");
         const profile = inferProfile(name, productName, category);
+        const fi = factory.get(String(d.id));
         devices[i] = {
           id: String(d.id), name, online: Boolean(d.online),
           category, productName, productId: d.product_id ? String(d.product_id) : undefined,
-          homeId: d.home_id !== undefined && d.home_id !== null ? String(d.home_id) : undefined, profile,
+          homeId: d.home_id !== undefined && d.home_id !== null ? String(d.home_id) : undefined,
+          mac: fi?.mac, uuid: fi?.uuid, serialNumber: fi?.sn, profile,
           status: Array.isArray(d.status) ? d.status.map((x: any) => ({ code: String(x.code), value: x.value })) : [],
           functions: mergeFunctions(profile, spec.functions), statusSpec: spec.status
         };
@@ -234,6 +289,10 @@ export class TuyaService {
       } finally { this.refreshing = null; }
     })();
     return this.refreshing;
+  }
+  async reportLogs(deviceId: string, codes: string[], startTime: number, endTime: number) {
+    if (!this.client) return [];
+    return await this.client.reportLogs(deviceId, codes, startTime, endTime);
   }
   async command(deviceId: string, code: string, value: unknown) {
     if (!this.client) throw new Error("Tuya nincs konfigurálva");
