@@ -6,13 +6,14 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { AutomationRule, Command, PersistentBackup, Snapshot } from "./types.js";
+import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile } from "./types.js";
 import { TuyaService } from "./tuya.js";
 import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
 import { AIService, type AIActionPlan } from "./ai.js";
+import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 
-const VERSION = "0.18.0";
+const VERSION = "0.19.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -245,6 +246,9 @@ function publicState() {
     settings: s.settings,
     copies: s.copies,
     networkEvents: s.networkEvents.slice(-50).reverse(),
+    people: s.people.map(p => ({ ...p, avatarBase64: undefined, hasAvatar: Boolean(p.avatarBase64) })),
+    presence: Object.values(s.presenceRuntime),
+    timeline: s.history.slice(-150).reverse(),
     recentCommands: s.commands.slice(-10).reverse().map((c) => ({
       id: c.id,
       type: c.type,
@@ -294,6 +298,92 @@ app.get("/api/media", userAuth, (_req, res) => {
   const media = store.get().snapshot?.media;
   if (!media) return res.status(503).json({ error: "media_not_available" });
   res.json(media);
+});
+
+const personInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  nickname: z.string().trim().max(80).optional().default(""),
+  role: z.string().trim().max(80).optional().default("Családtag"),
+  devices: z.array(z.object({
+    networkId: z.string().min(1).max(160),
+    role: z.enum(["primary", "secondary", "stationary"]),
+    label: z.string().trim().max(120).optional().default("")
+  })).max(20).default([])
+});
+
+app.get("/api/people", userAuth, (_req, res) => {
+  const s = store.get();
+  res.json({ people: s.people.map(p => ({ ...p, avatarBase64: undefined, hasAvatar: Boolean(p.avatarBase64) })), presence: Object.values(s.presenceRuntime) });
+});
+app.post("/api/people", userAuth, (req, res) => {
+  const parsed = personInputSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const now = new Date().toISOString();
+  const person: PersonProfile = { id: crypto.randomUUID(), ...parsed.data, createdAt: now, updatedAt: now };
+  store.mutate(s => {
+    s.people.push(person);
+    updatePresence(s, s.snapshot?.network || []);
+    pushHistory(s, { category: "system", type: "people.created", entityId: person.id, entityName: person.name, message: `${person.name} profilja létrejött.`, createdAt: now });
+  });
+  res.status(201).json({ ...person, avatarBase64: undefined, hasAvatar: false });
+});
+app.put("/api/people/:id", userAuth, (req, res) => {
+  const parsed = personInputSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const id = paramString(req.params.id);
+  let updated: PersonProfile | undefined;
+  store.mutate(s => {
+    const p = s.people.find(x => x.id === id);
+    if (!p) return;
+    Object.assign(p, parsed.data, { updatedAt: new Date().toISOString() });
+    updated = structuredClone(p);
+    updatePresence(s, s.snapshot?.network || []);
+  });
+  if (!updated) return res.status(404).json({ error: "person_not_found" });
+  res.json({ ...updated, avatarBase64: undefined, hasAvatar: Boolean(updated.avatarBase64) });
+});
+app.delete("/api/people/:id", userAuth, (req, res) => {
+  const id = paramString(req.params.id);
+  let removed: PersonProfile | undefined;
+  store.mutate(s => {
+    const idx = s.people.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    removed = s.people[idx];
+    s.people.splice(idx, 1);
+    delete s.presenceRuntime[id];
+    pushHistory(s, { category: "system", type: "people.deleted", entityId: id, entityName: removed?.name, message: `${removed?.name || "Profil"} törölve.`, createdAt: new Date().toISOString() });
+  });
+  if (!removed) return res.status(404).json({ error: "person_not_found" });
+  res.json({ ok: true });
+});
+app.post("/api/people/:id/avatar", userAuth, upload.single("avatar"), (req, res) => {
+  const id = paramString(req.params.id);
+  if (!req.file) return res.status(400).json({ error: "avatar_missing" });
+  if (![/^image\/jpeg$/, /^image\/png$/, /^image\/webp$/].some(r => r.test(req.file!.mimetype))) return res.status(400).json({ error: "avatar_type_not_supported" });
+  if (req.file.size > 700 * 1024) return res.status(413).json({ error: "avatar_too_large" });
+  let found = false;
+  store.mutate(s => {
+    const p = s.people.find(x => x.id === id);
+    if (!p) return;
+    found = true; p.avatarMime = req.file!.mimetype; p.avatarBase64 = req.file!.buffer.toString("base64"); p.updatedAt = new Date().toISOString();
+  });
+  if (!found) return res.status(404).json({ error: "person_not_found" });
+  res.json({ ok: true, avatarUrl: `/api/people/${encodeURIComponent(id)}/avatar` });
+});
+app.get("/api/people/:id/avatar", userAuth, (req, res) => {
+  const p = store.get().people.find(x => x.id === paramString(req.params.id));
+  if (!p?.avatarBase64 || !p.avatarMime) return res.status(404).end();
+  res.setHeader("Content-Type", p.avatarMime);
+  res.setHeader("Cache-Control", "private, max-age=300");
+  res.send(Buffer.from(p.avatarBase64, "base64"));
+});
+app.get("/api/history", userAuth, (req, res) => {
+  const category = String(req.query.category || "");
+  const from = req.query.from ? new Date(String(req.query.from)).getTime() : 0;
+  const to = req.query.to ? new Date(String(req.query.to)).getTime() : Number.POSITIVE_INFINITY;
+  const limit = Math.max(1, Math.min(2000, Number(req.query.limit || 500) || 500));
+  const events = store.get().history.filter(e => (!category || e.category === category) && new Date(e.createdAt).getTime() >= from && new Date(e.createdAt).getTime() <= to).slice(-limit).reverse();
+  res.json({ events });
 });
 
 app.post("/api/vacuum/command", userAuth, (req, res) => {
@@ -634,7 +724,11 @@ const persistentBackupSchema = z.object({
   automationRuntime: z.record(z.any()).optional(),
   alerts: z.array(z.any()).optional(),
   knownNetworkMacs: z.array(z.string()).optional(),
-  networkEvents: z.array(z.any()).optional()
+  networkEvents: z.array(z.any()).optional(),
+  people: z.array(z.any()).optional(),
+  history: z.array(z.any()).optional(),
+  presenceRuntime: z.record(z.any()).optional(),
+  historySampleKey: z.string().optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
@@ -716,10 +810,22 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
   store.mutate((s) => {
     const previousMedia = s.snapshot?.media;
     const events = deriveNetworkEvents(s.snapshot?.network || [], snapshot.network || []);
-    if (events.length) s.networkEvents = [...s.networkEvents, ...events].slice(-200);
+    if (events.length) {
+      s.networkEvents = [...s.networkEvents, ...events].slice(-200);
+      for (const h of networkEventsToHistory(events)) pushHistory(s, h);
+    }
+    const network = snapshot.network || [];
+    updatePresence(s, network);
+    recordHourlyNetworkSample(s, network);
+    const prevSnapshot = s.snapshot;
+    const now = new Date().toISOString();
+    if (prevSnapshot && prevSnapshot.kd20.online !== snapshot.kd20.online) pushHistory(s, { category: "system", type: snapshot.kd20.online ? "kd20.online" : "kd20.offline", entityId: "kd20", entityName: "KD20 / oldnas", message: `KD20 / oldnas: ${snapshot.kd20.online ? "online" : "offline"}.`, createdAt: now });
+    if (prevSnapshot && prevSnapshot.wd.online !== snapshot.wd.online) pushHistory(s, { category: "system", type: snapshot.wd.online ? "wd.online" : "wd.offline", entityId: "wd-my-cloud", entityName: "WD My Cloud", message: `WD My Cloud: ${snapshot.wd.online ? "online" : "offline"}.`, createdAt: now });
+    if (prevSnapshot?.printer && snapshot.printer && prevSnapshot.printer.online !== snapshot.printer.online) pushHistory(s, { category: "system", type: snapshot.printer.online ? "printer.online" : "printer.offline", entityId: "kd20-printer", entityName: "Samsung SCX-3200", message: `KD20 nyomtatószolgáltatás: ${snapshot.printer.online ? "elérhető" : "nem elérhető"}.`, createdAt: now });
+    if (prevSnapshot?.vacuum && snapshot.vacuum && (prevSnapshot.vacuum.state !== snapshot.vacuum.state || prevSnapshot.vacuum.online !== snapshot.vacuum.online)) pushHistory(s, { category: "smart", type: "vacuum.state", entityId: "xiaomi-vacuum", entityName: snapshot.vacuum.name, message: `${snapshot.vacuum.name}: ${snapshot.vacuum.online ? (snapshot.vacuum.state || "online") : "offline"}.`, createdAt: now, data: { state: snapshot.vacuum.state, online: snapshot.vacuum.online, battery: snapshot.vacuum.battery } });
     s.snapshot = { ...snapshot, media: snapshot.media ?? previousMedia, persistentState: undefined, localCopies: undefined };
-    s.bridgeLastSeenAt = new Date().toISOString();
-  }, false);
+    s.bridgeLastSeenAt = now;
+  });
   reconcileLocalCopies(snapshot);
   autoQueueCopies(snapshot);
   automationEngine.tick().catch(() => {});
@@ -827,9 +933,17 @@ if (fs.existsSync(WEB_DIST)) {
   });
 }
 
+async function refreshTuyaWithHistory() {
+  const before = structuredClone(tuya.state().devices || []);
+  await tuya.refresh();
+  const after = tuya.state().devices || [];
+  const events = tuyaDeviceHistory(before, after);
+  if (events.length) store.mutate(s => { for (const e of events) pushHistory(s, e); });
+  await automationEngine.tick();
+}
 if (tuya.state().configured) {
-  tuya.refresh().then(() => automationEngine.tick()).catch(() => {});
-  setInterval(() => tuya.refresh().then(() => automationEngine.tick()).catch(() => {}), TUYA_REFRESH_MS).unref();
+  refreshTuyaWithHistory().catch(() => {});
+  setInterval(() => refreshTuyaWithHistory().catch(() => {}), TUYA_REFRESH_MS).unref();
 }
 setInterval(() => automationEngine.tick().catch(() => {}), 10_000).unref();
 

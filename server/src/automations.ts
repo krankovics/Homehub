@@ -3,6 +3,7 @@ import type { AutomationAction, AutomationRule, AutomationRuntime, AlertRecord, 
 import { Store } from "./store.js";
 import { TuyaService, type TuyaDevice } from "./tuya.js";
 import { Mailer } from "./mailer.js";
+import { pushHistory } from "./history.js";
 
 const DEFAULT_TZ = "Europe/Budapest";
 const normMac = (v: string) => v.trim().toLowerCase().replace(/-/g, ":");
@@ -206,8 +207,10 @@ export class AutomationEngine {
       catch (err) { failures.push(`${action.type}: ${err instanceof Error ? err.message : String(err)}`); }
     }
     this.store.mutate(s => {
+      const firedAt = new Date().toISOString();
       const target = s.automations.find(x => x.id === rule.id);
-      if (target) target.lastTriggeredAt = new Date().toISOString();
+      if (target) target.lastTriggeredAt = firedAt;
+      pushHistory(s, { category: "automation", type: failures.length ? "automation.partial" : "automation.executed", entityId: rule.id, entityName: rule.name, message: `${rule.name}: automatizálás lefutott${failures.length ? ` · ${failures.length} hiba` : ""}.`, createdAt: firedAt, data: { detail: context.detail, failures } });
     });
     if (failures.length) await this.createAlert(rule, "HomeHub akcióhiba", `${context.detail}\n\n${failures.join("\n")}`, false);
   }

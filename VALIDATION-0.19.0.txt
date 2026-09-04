@@ -1,0 +1,17 @@
+HomeHub v0.19.0 validation
+
+PASS — root package version = 0.19.0
+PASS — web package version = 0.19.0
+PASS — server package version = 0.19.0
+PASS — Bridge version source = 0.19.0
+PASS — service worker cache = homehub-v0.19.0
+PASS — Go test ./... completed successfully
+PASS — linux/armv7 binary built with CGO_ENABLED=0
+PASS — linux/amd64 binary built with CGO_ENABLED=0
+PASS — amd64 binary reports: homehub-bridge 0.19.0 linux/amd64
+PASS — TypeScript syntax/transpile validation: types/store/history/index/ai/automations/web main
+PASS — history/presence pure-function runtime smoke test
+PASS — no new npm or Go dependency introduced
+
+Environment limitation:
+Full npm workspace build could not be executed in the artifact environment because npm registry packages were not available in the local cache and network install timed out. The Render Docker build remains the final dependency-aware TypeScript/Vite compilation check.

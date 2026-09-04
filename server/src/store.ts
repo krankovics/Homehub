@@ -17,6 +17,10 @@ const initialState: State = {
   alerts: [],
   knownNetworkMacs: [],
   networkEvents: [],
+  people: [],
+  history: [],
+  presenceRuntime: {},
+  historySampleKey: "",
   persistentUpdatedAt: null
 };
 
@@ -41,6 +45,10 @@ export class Store {
           alerts: Array.isArray(disk.alerts) ? disk.alerts : [],
           knownNetworkMacs: Array.isArray(disk.knownNetworkMacs) ? disk.knownNetworkMacs : [],
           networkEvents: Array.isArray(disk.networkEvents) ? disk.networkEvents : [],
+          people: Array.isArray(disk.people) ? disk.people : [],
+          history: Array.isArray(disk.history) ? disk.history : [],
+          presenceRuntime: disk.presenceRuntime || {},
+          historySampleKey: typeof disk.historySampleKey === "string" ? disk.historySampleKey : "",
           persistentUpdatedAt: disk.persistentUpdatedAt || null
         };
       } catch {
@@ -74,7 +82,11 @@ export class Store {
       automationRuntime: structuredClone(this.state.automationRuntime),
       alerts: structuredClone(this.state.alerts.slice(-200)),
       knownNetworkMacs: structuredClone(this.state.knownNetworkMacs),
-      networkEvents: structuredClone(this.state.networkEvents.slice(-200))
+      networkEvents: structuredClone(this.state.networkEvents.slice(-200)),
+      people: structuredClone(this.state.people),
+      history: structuredClone(this.state.history.slice(-10000)),
+      presenceRuntime: structuredClone(this.state.presenceRuntime),
+      historySampleKey: this.state.historySampleKey
     };
   }
 
@@ -90,6 +102,10 @@ export class Store {
     this.state.alerts = Array.isArray(backup.alerts) ? backup.alerts.slice(-200) : [];
     this.state.knownNetworkMacs = Array.isArray(backup.knownNetworkMacs) ? backup.knownNetworkMacs : [];
     this.state.networkEvents = Array.isArray(backup.networkEvents) ? backup.networkEvents.slice(-200) : [];
+    this.state.people = Array.isArray(backup.people) ? backup.people : [];
+    this.state.history = Array.isArray(backup.history) ? backup.history.slice(-10000) : [];
+    this.state.presenceRuntime = backup.presenceRuntime || {};
+    this.state.historySampleKey = backup.historySampleKey || "";
     this.state.persistentUpdatedAt = backup.persistentUpdatedAt;
     this.save();
     return true;

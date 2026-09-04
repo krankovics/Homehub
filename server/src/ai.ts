@@ -234,12 +234,22 @@ export class AIService {
       areaM2: state.snapshot.vacuum.areaM2,
       durationSec: state.snapshot.vacuum.durationSec
     } : null;
+    const historyCutoff = Date.now() - 72 * 60 * 60 * 1000;
+    const recentHistory = state.history.filter(e => new Date(e.createdAt).getTime() >= historyCutoff).slice(-700).map(e => ({
+      category: e.category, type: e.type, entityId: e.entityId, entityName: e.entityName, message: e.message, createdAt: e.createdAt, data: e.data
+    }));
+    const people = state.people.map(p => ({ id: p.id, name: p.name, nickname: p.nickname, role: p.role, devices: p.devices }));
+    const presence = Object.values(state.presenceRuntime).map(p => ({ personId: p.personId, name: p.name, status: p.status, confidence: p.confidence, since: p.since, lastSeenAt: p.lastSeenAt, source: p.source, networkId: p.networkId, note: p.note }));
     return {
       now: new Date().toISOString(),
       timezone: "Europe/Budapest",
       bridgeOnline: Boolean(state.bridgeLastSeenAt && Date.now() - new Date(state.bridgeLastSeenAt).getTime() < 90_000),
       devices,
       network,
+      people,
+      presence,
+      recentHistory,
+      historyWindowHours: 72,
       networkEvents: state.networkEvents.slice(-30).map(e => ({ type: e.type, deviceName: e.deviceName, message: e.message, createdAt: e.createdAt })),
       vacuum,
       automations: state.automations.map(r => ({ id: r.id, name: r.name, enabled: r.enabled, trigger: r.trigger, actions: r.actions, lastTriggeredAt: r.lastTriggeredAt })),
@@ -252,7 +262,7 @@ export class AIService {
     const data = await this.responses({
       max_output_tokens: 1200,
       input: [
-        { role: "system", content: [{ type: "input_text", text: "Te vagy a HomeHub AI Asszisztens. Magyarul, tömören és tényszerűen válaszolj. Kizárólag a kapott HomeHub állapotból állíts tényt a házról. Ha nincs adat, mondd ki. Ne találj ki eszközállapotot. A kapu nyitása/zárása, telepítő DP-k, valamint EV töltő áramlimit módosítása magas kockázatú és AI-ból nem hajtható végre. A felhasználó kérésére javasolhatsz automatizálást, de az AI önállóan nem aktivál szabályt vagy eszközt. Időzóna: Europe/Budapest." }] },
+        { role: "system", content: [{ type: "input_text", text: "Te vagy a HomeHub AI Asszisztens. Magyarul, tömören és tényszerűen válaszolj. Kizárólag a kapott HomeHub állapotból és recentHistory eseményekből állíts tényt a házról. A people/presence mezőből válaszolj arra, ki van itthon. A recentHistory alapján válaszolj a ma, tegnap, éjjel, mikor, mennyi ideig jellegű kérdésekre; az eseményidőket Europe/Budapest szerint értelmezd. Ha a kért időszak kívül esik a historyWindowHours ablakon vagy nincs elég esemény, ezt egyértelműen mondd ki. Ne találj ki eszközállapotot. A kapu nyitása/zárása, telepítő DP-k, valamint EV töltő áramlimit módosítása magas kockázatú és AI-ból nem hajtható végre. A felhasználó kérésére javasolhatsz automatizálást, de az AI önállóan nem aktivál szabályt vagy eszközt. Időzóna: Europe/Budapest." }] },
         { role: "user", content: [{ type: "input_text", text: `HomeHub állapot:\n${JSON.stringify(context)}\n\nKérdés:\n${message}` }] }
       ]
     });

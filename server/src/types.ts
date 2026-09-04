@@ -103,6 +103,50 @@ export type VaultStatus = {
   enabled: boolean; initialized: boolean; pinConfigured: boolean; localUrl: string; entries: VaultEntryMeta[]; updatedAt: string; error?: string;
 };
 
+
+export type PersonDeviceRole = "primary" | "secondary" | "stationary";
+
+export type PersonDeviceLink = {
+  networkId: string;
+  role: PersonDeviceRole;
+  label?: string;
+};
+
+export type PersonProfile = {
+  id: string;
+  name: string;
+  nickname?: string;
+  role?: string;
+  avatarMime?: string;
+  avatarBase64?: string;
+  devices: PersonDeviceLink[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PresenceStatus = {
+  personId: string;
+  name: string;
+  status: "home" | "away" | "uncertain";
+  confidence: number;
+  since?: string;
+  lastSeenAt?: string;
+  source?: string;
+  networkId?: string;
+  note?: string;
+};
+
+export type HistoryEvent = {
+  id: string;
+  category: "presence" | "network" | "security" | "smart" | "energy" | "automation" | "system";
+  type: string;
+  entityId?: string;
+  entityName?: string;
+  message: string;
+  createdAt: string;
+  data?: Record<string, unknown>;
+};
+
 export type Snapshot = {
   bridgeId: string;
   timestamp: string;
@@ -234,6 +278,10 @@ export type PersistentBackup = {
   alerts?: AlertRecord[];
   knownNetworkMacs?: string[];
   networkEvents?: NetworkEvent[];
+  people?: PersonProfile[];
+  history?: HistoryEvent[];
+  presenceRuntime?: Record<string, PresenceStatus>;
+  historySampleKey?: string;
 };
 
 export type State = {
@@ -247,5 +295,9 @@ export type State = {
   alerts: AlertRecord[];
   knownNetworkMacs: string[];
   networkEvents: NetworkEvent[];
+  people: PersonProfile[];
+  history: HistoryEvent[];
+  presenceRuntime: Record<string, PresenceStatus>;
+  historySampleKey: string;
   persistentUpdatedAt: string | null;
 };
