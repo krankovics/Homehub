@@ -12,7 +12,7 @@ import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 
-const VERSION = "0.16.1";
+const VERSION = "0.16.2";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -294,7 +294,12 @@ const automationTriggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("schedule"), time: z.string().regex(/^\d{2}:\d{2}$/), days: z.array(z.number().int().min(0).max(6)).min(1).max(7), timezone: z.string().optional().default("Europe/Budapest") })
 ]);
 const automationActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("tuya.command"), deviceId: z.string().min(1), code: z.string().min(1), value: z.any() }),
+  z.object({
+    type: z.literal("tuya.command"),
+    deviceId: z.string().min(1),
+    code: z.string().min(1),
+    value: z.union([z.string(), z.number(), z.boolean(), z.null()])
+  }),
   z.object({ type: z.literal("vacuum.command"), action: z.enum(["start","pause","stop","dock"]) }),
   z.object({ type: z.literal("ai.summary"), subject: z.string().min(1).max(180), email: z.boolean().optional().default(true) }),
   z.object({ type: z.literal("alert"), subject: z.string().min(1).max(180), message: z.string().min(1).max(4000), email: z.boolean().optional().default(true) })

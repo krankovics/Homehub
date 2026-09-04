@@ -1,0 +1,12 @@
+HomeHub v0.16.2 validation
+
+PASS - Render log root cause isolated to AutomationAction / Zod schema mismatch
+PASS - tuya.command value is now a required validated primitive: string | number | boolean | null
+PASS - source AutomationAction still requires value
+PASS - Feyree v0.16.1 charging-state fixes retained
+PASS - myGate v0.16.1 light true/false toggle fix retained
+PASS - Bridge ARMv7 cross-build completed
+PASS - Bridge amd64 build completed
+PASS - Bridge binary reports 0.16.2
+
+Note: the release hotfix changes server-side TypeScript validation. The v0.16.1 Render failure occurred before runtime and was not a WD Bridge failure.

@@ -24,7 +24,7 @@ import (
 	"homehub/bridge/internal/vacuum"
 )
 
-const version = "0.16.1"
+const version = "0.16.2"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
