@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"homehub/bridge/internal/vault"
 )
 
 type Config struct {
@@ -26,6 +28,7 @@ type Config struct {
 	MediaRoot     string
 	Roots         []Root
 	MaxItems      int
+	Vault         *vault.Service
 }
 
 type Root struct {
@@ -150,7 +153,7 @@ func Scan(c Config) Snapshot {
 }
 
 func StartServer(c Config) {
-	if !c.Enabled {
+	if !c.Enabled && c.Vault == nil {
 		return
 	}
 	mux := http.NewServeMux()
@@ -159,8 +162,13 @@ func StartServer(c Config) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"service":"homehub-media"}`))
 	})
-	mux.HandleFunc("/media/play", func(w http.ResponseWriter, r *http.Request) { serve(c, w, r, false) })
-	mux.HandleFunc("/media/download", func(w http.ResponseWriter, r *http.Request) { serve(c, w, r, true) })
+	if c.Enabled {
+		mux.HandleFunc("/media/play", func(w http.ResponseWriter, r *http.Request) { serve(c, w, r, false) })
+		mux.HandleFunc("/media/download", func(w http.ResponseWriter, r *http.Request) { serve(c, w, r, true) })
+	}
+	if c.Vault != nil {
+		c.Vault.Register(mux)
+	}
 	listen := c.Listen
 	if strings.TrimSpace(listen) == "" {
 		listen = "0.0.0.0:8788"

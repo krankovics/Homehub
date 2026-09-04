@@ -30,6 +30,7 @@ type Status struct {
 	AdminURL     string         `json:"adminUrl"`
 	Note         string         `json:"note"`
 	Managed      *ManagedStatus `json:"managed,omitempty"`
+	Visibility   string         `json:"visibility,omitempty"`
 }
 
 var scanMu sync.Mutex
@@ -173,6 +174,12 @@ func probeAdmin(ip string, ports []int) (bool, float64, int) {
 	return true, float64(best.Microseconds()) / 1000.0, found
 }
 
+func ipInsideSubnet(ipStr, subnet string) bool {
+	ip := net.ParseIP(strings.TrimSpace(ipStr))
+	_, n, err := net.ParseCIDR(strings.TrimSpace(subnet))
+	return err == nil && ip != nil && n.Contains(ip)
+}
+
 func Probe(cfg config.Config) []Status {
 	if !cfg.Network.Enabled {
 		return nil
@@ -207,12 +214,18 @@ func Probe(cfg config.Config) []Status {
 		if configuredIP != "" {
 			knownIP[configuredIP] = true
 		}
-		st := Status{ID: d.ID, Name: d.Name, Kind: d.Kind, IP: ip, ConfiguredIP: configuredIP, IPSource: ipSource, IPChanged: configuredIP != "" && ip != "" && configuredIP != ip, MAC: mac, AdminURL: d.AdminURL}
+		st := Status{ID: d.ID, Name: d.Name, Kind: d.Kind, IP: ip, ConfiguredIP: configuredIP, IPSource: ipSource, IPChanged: configuredIP != "" && ip != "" && configuredIP != ip, MAC: mac, AdminURL: d.AdminURL, Visibility: "direct"}
 		if ip != "" && (st.AdminURL == "" || st.IPChanged) {
 			st.AdminURL = "http://" + ip
 		}
 		if ip == "" {
 			st.Note = "IP még nem található a helyi ARP táblában"
+			out = append(out, st)
+			continue
+		}
+		if !ipInsideSubnet(ip, cfg.Network.Subnet) {
+			st.Visibility = "indirect"
+			st.Note = "Másik belső alhálózat mögött van; az admin URL ismert, de a WD Bridge felől nem közvetlenül mérhető"
 			out = append(out, st)
 			continue
 		}

@@ -96,6 +96,13 @@ type Config struct {
 			Path string `json:"path"`
 		} `json:"roots"`
 	} `json:"media"`
+	Vault struct {
+		Enabled        bool   `json:"enabled"`
+		File           string `json:"file"`
+		KeyFile        string `json:"keyFile"`
+		PinFile        string `json:"pinFile"`
+		SessionMinutes int    `json:"sessionMinutes"`
+	} `json:"vault"`
 	Network struct {
 		Enabled     bool   `json:"enabled"`
 		Subnet      string `json:"subnet"`
@@ -200,6 +207,22 @@ func Load(path string, requireCloud bool) (Config, error) {
 	if len(c.Printer.ProbePorts) == 0 {
 		c.Printer.ProbePorts = []int{9100, 515, 631}
 	}
+	vaultUnset := !c.Vault.Enabled && strings.TrimSpace(c.Vault.File) == "" && strings.TrimSpace(c.Vault.KeyFile) == "" && strings.TrimSpace(c.Vault.PinFile) == "" && c.Vault.SessionMinutes == 0
+	if vaultUnset {
+		c.Vault.Enabled = true
+	}
+	if strings.TrimSpace(c.Vault.File) == "" {
+		c.Vault.File = "/DataVolume/homehub/credentials.vault"
+	}
+	if strings.TrimSpace(c.Vault.KeyFile) == "" {
+		c.Vault.KeyFile = "/DataVolume/homehub/vault.key"
+	}
+	if strings.TrimSpace(c.Vault.PinFile) == "" {
+		c.Vault.PinFile = "/DataVolume/homehub/vault-pin.json"
+	}
+	if c.Vault.SessionMinutes <= 0 {
+		c.Vault.SessionMinutes = 10
+	}
 	if strings.TrimSpace(c.Network.Subnet) == "" {
 		c.Network.Subnet = "192.168.1.0/24"
 	}
@@ -227,11 +250,11 @@ func Load(path string, requireCloud bool) (Config, error) {
 			PortNames  map[string]string `json:"portNames"`
 		}
 		c.Network.Devices = []target{
-			{ID: "technicolor-fga2233", Name: "Technicolor FGA2233", Kind: "gateway", IP: "192.168.1.1", AdminURL: "http://192.168.1.1", ProbePorts: []int{80, 443}},
-			{ID: "archer-c6", Name: "Archer C6", Kind: "router", IP: "192.168.1.129", MAC: "5C-62-8B-95-64-EA", AdminURL: "http://192.168.1.129", ProbePorts: []int{80, 443}},
-			{ID: "re220", Name: "TP-Link RE220", Kind: "extender", MAC: "B4-B0-24-EF-3C-12", ProbePorts: []int{80, 443}},
-			{ID: "re315-1", Name: "TP-Link RE315 #1", Kind: "extender", MAC: "DC-62-79-DD-93-86", ProbePorts: []int{80, 443}},
-			{ID: "re315-2", Name: "TP-Link RE315 #2", Kind: "extender", MAC: "0C-EF-15-1B-FE-CE", ProbePorts: []int{80, 443}},
+			{ID: "technicolor-fga2233", Name: "Technicolor FGA2233", Kind: "gateway", IP: "192.168.1.1", MAC: "A0-B5-3C-CD-BB-AE", AdminURL: "https://192.168.1.1", ProbePorts: []int{80, 443}},
+			{ID: "archer-c6", Name: "Archer C6 v4", Kind: "router", IP: "192.168.1.129", MAC: "5C-62-8B-95-64-EB", AdminURL: "http://192.168.0.1", ProbePorts: []int{80, 443}},
+			{ID: "re220", Name: "TP-Link RE220 v3", Kind: "extender", IP: "192.168.0.110", MAC: "B4-B0-24-EF-3C-12", AdminURL: "http://192.168.0.110", ProbePorts: []int{80, 443}},
+			{ID: "re315-1", Name: "TP-Link RE315 #1 v1", Kind: "extender", IP: "192.168.0.113", MAC: "DC-62-79-DD-93-86", AdminURL: "http://192.168.0.113", ProbePorts: []int{80, 443}},
+			{ID: "re315-2", Name: "TP-Link RE315 #2 v1", Kind: "extender", IP: "192.168.0.116", MAC: "0C-EF-15-1B-FE-CE", AdminURL: "http://192.168.0.116", ProbePorts: []int{80, 443}},
 		}
 	}
 	// Merge the known home topology into older config files too, so an existing
@@ -260,6 +283,11 @@ func Load(path string, requireCloud bool) (Config, error) {
 			c.Network.Devices = append(c.Network.Devices, d)
 		}
 	}
+	ensure(networkTarget{ID: "technicolor-fga2233", Name: "Technicolor FGA2233", Kind: "gateway", IP: "192.168.1.1", MAC: "A0:B5:3C:CD:BB:AE", AdminURL: "https://192.168.1.1", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "archer-c6", Name: "Archer C6 v4", Kind: "router", IP: "192.168.1.129", MAC: "5C:62:8B:95:64:EB", AdminURL: "http://192.168.0.1", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "re220", Name: "TP-Link RE220 v3", Kind: "extender", IP: "192.168.0.110", MAC: "B4:B0:24:EF:3C:12", AdminURL: "http://192.168.0.110", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "re315-1", Name: "TP-Link RE315 #1 v1", Kind: "extender", IP: "192.168.0.113", MAC: "DC:62:79:DD:93:86", AdminURL: "http://192.168.0.113", ProbePorts: []int{80, 443}})
+	ensure(networkTarget{ID: "re315-2", Name: "TP-Link RE315 #2 v1", Kind: "extender", IP: "192.168.0.116", MAC: "0C:EF:15:1B:FE:CE", AdminURL: "http://192.168.0.116", ProbePorts: []int{80, 443}})
 	ensure(networkTarget{ID: "tl-sg108e", Name: "TL-SG108E", Kind: "switch", IP: "192.168.1.49", MAC: "78:8C:B5:5F:7F:04", AdminURL: "http://192.168.1.49", ProbePorts: []int{80, 443}, Adapter: "tplink-easy-smart"})
 	ensure(networkTarget{ID: "kd20", Name: "KD20 / oldnas", Kind: "nas", IP: "192.168.1.12", MAC: "80:EE:73:49:89:0C", AdminURL: "http://192.168.1.12", ProbePorts: []int{80, 9091}})
 	ensure(networkTarget{ID: "wd-my-cloud", Name: "WD My Cloud", Kind: "nas", IP: "192.168.1.180", MAC: "00:90:A9:D2:BB:EA", AdminURL: "http://192.168.1.180", ProbePorts: []int{80, 22}})
@@ -285,6 +313,34 @@ func Load(path string, requireCloud bool) (Config, error) {
 		c.XiaomiVacuum.StateMap = map[string]string{}
 	}
 	for i := range c.Network.Devices {
+		switch c.Network.Devices[i].ID {
+		case "technicolor-fga2233":
+			if strings.TrimSpace(c.Network.Devices[i].AdminURL) == "" || c.Network.Devices[i].AdminURL == "http://192.168.1.1" {
+				c.Network.Devices[i].AdminURL = "https://192.168.1.1"
+			}
+			if strings.TrimSpace(c.Network.Devices[i].MAC) == "" {
+				c.Network.Devices[i].MAC = "A0:B5:3C:CD:BB:AE"
+			}
+		case "archer-c6":
+			c.Network.Devices[i].Name = "Archer C6 v4"
+			if strings.EqualFold(strings.ReplaceAll(c.Network.Devices[i].MAC, "-", ":"), "5C:62:8B:95:64:EA") || strings.TrimSpace(c.Network.Devices[i].MAC) == "" {
+				c.Network.Devices[i].MAC = "5C:62:8B:95:64:EB"
+			}
+			c.Network.Devices[i].IP = "192.168.1.129"
+			c.Network.Devices[i].AdminURL = "http://192.168.0.1"
+		case "re220":
+			c.Network.Devices[i].Name = "TP-Link RE220 v3"
+			c.Network.Devices[i].IP = "192.168.0.110"
+			c.Network.Devices[i].AdminURL = "http://192.168.0.110"
+		case "re315-1":
+			c.Network.Devices[i].Name = "TP-Link RE315 #1 v1"
+			c.Network.Devices[i].IP = "192.168.0.113"
+			c.Network.Devices[i].AdminURL = "http://192.168.0.113"
+		case "re315-2":
+			c.Network.Devices[i].Name = "TP-Link RE315 #2 v1"
+			c.Network.Devices[i].IP = "192.168.0.116"
+			c.Network.Devices[i].AdminURL = "http://192.168.0.116"
+		}
 		if c.Network.Devices[i].ID == "tl-sg108e" && strings.TrimSpace(c.Network.Devices[i].Adapter) == "" {
 			c.Network.Devices[i].Adapter = "tplink-easy-smart"
 		}

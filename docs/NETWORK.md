@@ -179,3 +179,22 @@ A v0.17 elvárt Bridge verziója:
 ```text
 homehub-bridge 0.17.0 linux/arm
 ```
+
+## v0.18 topológia-kiegészítés: Archer C6 + EasyMesh
+
+A helyszíni ellenőrzés alapján az Archer C6 v4 router módban külön belső hálózatot használ:
+
+```text
+Technicolor FGA2233
+LAN 192.168.1.1/24
+   |
+   +-- Archer C6 WAN 192.168.1.129
+          LAN 192.168.0.1/24
+             +-- RE220 v3      192.168.0.110
+             +-- RE315 #1 v1   192.168.0.113
+             +-- RE315 #2 v1   192.168.0.116
+```
+
+A három extender az Archer EasyMesh nézetében jelenik meg. A WD Bridge `192.168.1.180` címen a külső `192.168.1.0/24` hálózaton fut, ezért a `192.168.0.x` mesh node-okat nem jelöli tévesen biztosan offline-nak: `visibility=indirect` státuszt ad, és azt írja, hogy a részletes méréshez az Archer belső LAN-ja mögött vannak.
+
+A v0.18 nem kapcsol be WAN remote managementet, port forwardot vagy tűzfalszabályt az Archerhez. Az admin URL-ek a Credentials Vaultban eltárolhatók, és olyan kliensről nyithatók meg, amely eléri az adott belső hálózatot.

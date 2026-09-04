@@ -12,7 +12,7 @@ import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 
-const VERSION = "0.17.0";
+const VERSION = "0.18.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -685,7 +685,7 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
       note: z.string()
     }).optional(),
     network: z.array(z.object({
-      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), configuredIp: z.string().optional(), ipSource: z.string().optional(), ipChanged: z.boolean().optional(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string(),
+      id: z.string(), name: z.string(), kind: z.string(), online: z.boolean(), adminOnline: z.boolean().optional(), ip: z.string(), configuredIp: z.string().optional(), ipSource: z.string().optional(), ipChanged: z.boolean().optional(), mac: z.string(), latencyMs: z.number(), adminUrl: z.string(), note: z.string(), visibility: z.string().optional(),
       managed: z.object({
         adapter: z.string(), credentialsConfigured: z.boolean(), authOk: z.boolean(), model: z.string().optional(), hardware: z.string().optional(), firmware: z.string().optional(), gateway: z.string().optional(), error: z.string().optional(), updatedAt: z.string(),
         ports: z.array(z.object({ port: z.number().int(), label: z.string().optional(), enabled: z.boolean(), linkUp: z.boolean(), speedMbps: z.number().int(), duplex: z.string(), configSpeed: z.string(), flowControl: z.boolean(), txPackets: z.number().nonnegative().optional(), rxPackets: z.number().nonnegative().optional(), health: z.string() })).optional()
@@ -701,6 +701,10 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
       items: z.array(z.object({
         id: z.string(), name: z.string(), relativePath: z.string(), folder: z.string(), sizeBytes: z.number().nonnegative(), modifiedAt: z.string(), extension: z.string(), nativePlay: z.boolean(), playUrl: z.string().url(), downloadUrl: z.string().url()
       }))
+    }).optional(),
+    vault: z.object({
+      enabled: z.boolean(), initialized: z.boolean(), pinConfigured: z.boolean(), localUrl: z.string(), updatedAt: z.string(), error: z.string().optional(),
+      entries: z.array(z.object({ id: z.string(), label: z.string(), kind: z.string().optional(), username: z.string().optional(), adminUrl: z.string().optional(), ip: z.string().optional(), hasPassword: z.boolean(), saved: z.boolean(), updatedAt: z.string().optional() }))
     }).optional(),
     persistentState: persistentBackupSchema.optional(),
     localCopies: z.record(z.object({ hash: z.string(), name: z.string(), destination: z.string(), copiedAt: z.string() })).optional()

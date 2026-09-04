@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home Hub Credentials Vault</title>
+<style>
+:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#071017;color:#eef7ff}body{margin:0;background:#071017}.wrap{max-width:980px;margin:auto;padding:28px 18px 80px}.head{display:flex;gap:14px;align-items:center;margin-bottom:24px}.mark{width:44px;height:44px;border-radius:14px;background:#1fa9df;display:grid;place-items:center;font-weight:800;font-size:22px}.muted{color:#8ca3b4}.card{background:#101b24;border:1px solid #243847;border-radius:20px;padding:20px;margin:14px 0;box-shadow:0 14px 36px #0004}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.entry{background:#0b151d;border:1px solid #233746;border-radius:16px;padding:16px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.pill{font-size:12px;padding:5px 9px;border-radius:99px;background:#143348;color:#83d7ff}.ok{background:#103b31;color:#7ef2c6}.warn{background:#3d3011;color:#ffd86b}input{box-sizing:border-box;width:100%;background:#071017;border:1px solid #2b4151;color:#fff;border-radius:11px;padding:11px 12px;margin:6px 0 10px;font-size:16px}button,a.btn{border:0;border-radius:11px;padding:11px 14px;background:#1fa9df;color:white;font-weight:700;text-decoration:none;cursor:pointer;display:inline-block}.secondary{background:#223240}button:disabled{opacity:.45}.actions{display:flex;gap:8px;flex-wrap:wrap}.secret{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#071017;border:1px dashed #365063;padding:10px;border-radius:10px;word-break:break-all;margin:8px 0}.hidden{display:none}.error{color:#ff9a9a}@media(max-width:700px){.grid{grid-template-columns:1fr}.wrap{padding:18px 12px 60px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="head"><div class="mark">H</div><div><h1 style="margin:0">Hozzáférések</h1><div class="muted">Home Hub helyi Credentials Vault. A jelszavak nem kerülnek Renderre vagy AI-hoz.</div></div></div>
+  <section id="auth" class="card"><h2 id="authTitle">Trezor feloldása</h2><p id="authText" class="muted">A megjelenítéshez add meg a helyi trezor PIN-t.</p><input id="pin" type="password" autocomplete="current-password" placeholder="Legalább 6 karakter"><div class="actions"><button id="authBtn">Feloldás</button></div><p id="authMsg"></p></section>
+  <section id="vault" class="hidden"><div class="card row"><div><strong>Helyi trezor feloldva</strong><div class="muted">A munkamenet automatikusan lejár.</div></div><button id="logout" class="secondary">Zárolás</button></div><div id="entries" class="grid"></div><section class="card"><h3>Új hozzáférés</h3><div id="newForm"></div></section></section>
+</main>
+<script>
+const q=s=>document.querySelector(s);let status=null;
+async function req(url,opt={}){const r=await fetch(url,{...opt,headers:{'content-type':'application/json',...(opt.headers||{})}});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.error||('HTTP '+r.status));return b}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function boot(){status=await req('/vault/api/status');q('#authTitle').textContent=status.pinConfigured?'Trezor feloldása':'Trezor PIN beállítása';q('#authText').textContent=status.pinConfigured?'A jelszavak megjelenítéséhez add meg a helyi trezor PIN-t.':'Első használat: adj meg legalább 6 karakteres PIN-t. Ez csak a WD-n marad.';q('#authBtn').textContent=status.pinConfigured?'Feloldás':'PIN létrehozása'}
+q('#authBtn').onclick=async()=>{const pin=q('#pin').value;try{await req(status.pinConfigured?'/vault/api/login':'/vault/api/setup',{method:'POST',body:JSON.stringify({pin})});q('#auth').classList.add('hidden');q('#vault').classList.remove('hidden');await loadEntries();q('#authMsg').textContent=''}catch(e){q('#authMsg').className='error';q('#authMsg').textContent=e.message}}
+q('#logout').onclick=async()=>{await req('/vault/api/logout',{method:'POST',body:'{}'});location.reload()}
+function formHTML(e,isNew=false){
+  let h='<div class="entry"><div class="row"><div><strong>'+esc(e.label||e.id||'Új hozzáférés')+'</strong><div class="muted">'+esc(e.kind||'')+'</div></div>'+(e.saved?'<span class="pill ok">Mentve</span>':'<span class="pill warn">Nincs jelszó</span>')+'</div>';
+  h+='<label>Azonosító<input class="id" '+(isNew?'':'readonly')+' value="'+esc(e.id||'')+'"></label>';
+  h+='<label>Név<input class="label" value="'+esc(e.label||'')+'"></label>';
+  h+='<label>Admin URL<input class="adminUrl" value="'+esc(e.adminUrl||'')+'"></label>';
+  h+='<label>Felhasználó<input class="username" value="'+esc(e.username||'')+'"></label>';
+  h+='<label>Jelszó<input class="password" type="password" placeholder="'+(e.hasPassword?'•••••••• · üresen hagyva megmarad':'Jelszó')+'"></label><div class="secret hidden"></div><div class="actions"><button class="save">Mentés</button>';
+  if(e.hasPassword)h+='<button class="reveal secondary">Megjelenítés</button>';
+  if(e.adminUrl)h+='<a class="btn secondary" target="_blank" rel="noreferrer" href="'+esc(e.adminUrl)+'">Admin megnyitása</a>';
+  if(e.saved)h+='<button class="delete secondary">Törlés</button>';
+  return h+'</div></div>';
+}
+async function loadEntries(){let list;try{list=await req('/vault/api/entries')}catch(e){if(e.message==='auth_required')return location.reload();throw e}q('#entries').innerHTML=list.map(e=>formHTML(e)).join('');bind(q('#entries'));q('#newForm').innerHTML=formHTML({id:'',label:'',kind:'egyéb',adminUrl:'',username:'',saved:false,hasPassword:false},true);bind(q('#newForm'))}
+function bind(root){root.querySelectorAll('.entry').forEach(card=>{const val=c=>card.querySelector(c).value;card.querySelector('.save').onclick=async()=>{try{await req('/vault/api/entries',{method:'POST',body:JSON.stringify({id:val('.id'),label:val('.label'),adminUrl:val('.adminUrl'),username:val('.username'),password:val('.password')})});await loadEntries()}catch(e){alert(e.message)}};const rev=card.querySelector('.reveal');if(rev)rev.onclick=async()=>{const b=await req('/vault/api/reveal?id='+encodeURIComponent(val('.id')));const box=card.querySelector('.secret');box.textContent=b.password||'(üres)';box.classList.remove('hidden')};const del=card.querySelector('.delete');if(del)del.onclick=async()=>{if(confirm('Törlöd ezt a mentett hozzáférést?')){await req('/vault/api/delete',{method:'POST',body:JSON.stringify({id:val('.id')})});await loadEntries()}}})}
+boot().catch(e=>{q('#authMsg').className='error';q('#authMsg').textContent=e.message});
+</script>
+</body></html>

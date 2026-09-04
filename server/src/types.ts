@@ -45,6 +45,7 @@ export type NetworkStatus = {
   adminUrl: string;
   note: string;
   managed?: NetworkManagedStatus;
+  visibility?: string;
 };
 
 export type NetworkEvent = {
@@ -93,6 +94,15 @@ export type MediaSnapshot = {
   updatedAt: string;
 };
 
+
+export type VaultEntryMeta = {
+  id: string; label: string; kind?: string; username?: string; adminUrl?: string; ip?: string; hasPassword: boolean; saved: boolean; updatedAt?: string;
+};
+
+export type VaultStatus = {
+  enabled: boolean; initialized: boolean; pinConfigured: boolean; localUrl: string; entries: VaultEntryMeta[]; updatedAt: string; error?: string;
+};
+
 export type Snapshot = {
   bridgeId: string;
   timestamp: string;
@@ -111,6 +121,7 @@ export type Snapshot = {
   network?: NetworkStatus[];
   vacuum?: VacuumStatus;
   media?: MediaSnapshot;
+  vault?: VaultStatus;
   persistentState?: PersistentBackup;
   localCopies?: Record<string, { hash: string; name: string; destination: string; copiedAt: string }>;
 };

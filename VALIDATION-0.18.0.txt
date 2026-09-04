@@ -1,0 +1,26 @@
+HomeHub v0.18.0 validation
+Date: 2026-09-04
+
+PASS — root package version = 0.18.0
+PASS — web package version = 0.18.0
+PASS — server package version = 0.18.0
+PASS — Bridge version = 0.18.0
+PASS — gofmt on changed Bridge sources
+PASS — go test ./...
+PASS — Linux ARMv7 static Bridge cross-build
+PASS — Linux amd64 static Bridge cross-build
+PASS — amd64 binary reports: homehub-bridge 0.18.0 linux/amd64
+PASS — Credentials Vault encrypted-at-rest unit test
+PASS — Credentials Vault PIN verification unit test
+PASS — Vault smoke test created credentials.vault + vault.key with mode 0600
+PASS — Vault smoke test exposes 8 infrastructure metadata entries and no plaintext password field
+PASS — TypeScript syntax/transpile parse: 9 .ts/.tsx files, 0 syntax errors
+PASS — embedded vault JavaScript syntax check (node --check)
+PASS — release tree contains no live config.json, network-secrets.json, credentials.vault, vault.key or vault-pin.json
+
+Bridge binary SHA-256:
+53a24ccbf3ca3eca5e73d3126474b7cbdb349efc3a96f22097072a71a69aebee  bridge/bin/homehub-bridge-linux-armv7
+bef136191194d78d8dfd7f09cd260bebb717bd6e67b731de49709435b032c6b9  bridge/bin/homehub-bridge-linux-amd64
+
+LOCAL ENVIRONMENT LIMITATION
+The full npm workspace build could not be run in this build container because the npm registry was not reachable (DNS EAI_AGAIN). The TypeScript sources were still parsed/transpiled with the installed TypeScript compiler and produced zero syntax diagnostics. Render should run the authoritative dependency-backed web/server TypeScript build after the GitHub push.

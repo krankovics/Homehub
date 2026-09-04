@@ -24,9 +24,10 @@ import (
 	"homehub/bridge/internal/printer"
 	"homehub/bridge/internal/transmission"
 	"homehub/bridge/internal/vacuum"
+	"homehub/bridge/internal/vault"
 )
 
-const version = "0.17.0"
+const version = "0.18.0"
 
 type snapshot struct {
 	BridgeID  string `json:"bridgeId"`
@@ -46,18 +47,19 @@ type snapshot struct {
 	Network         []network.Status              `json:"network,omitempty"`
 	Vacuum          vacuum.Status                 `json:"vacuum"`
 	Media           *media.Snapshot               `json:"media,omitempty"`
+	Vault           *vault.PublicStatus           `json:"vault,omitempty"`
 	PersistentState json.RawMessage               `json:"persistentState,omitempty"`
 	LocalCopies     map[string]copyjob.CopyRecord `json:"localCopies,omitempty"`
 }
 
-func mediaConfig(cfg config.Config) media.Config {
+func mediaConfig(cfg config.Config, vlt *vault.Service) media.Config {
 	roots := make([]media.Root, 0, len(cfg.Media.Roots))
 	for _, r := range cfg.Media.Roots {
 		roots = append(roots, media.Root{ID: r.ID, Name: r.Name, Path: r.Path})
 	}
 	return media.Config{
 		Enabled: cfg.Media.Enabled, Listen: cfg.Media.Listen, PublicBaseURL: cfg.Media.PublicBaseURL,
-		Secret: cfg.Media.Secret, MediaRoot: cfg.WD.MediaRoot, Roots: roots, MaxItems: cfg.Media.MaxItems,
+		Secret: cfg.Media.Secret, MediaRoot: cfg.WD.MediaRoot, Roots: roots, MaxItems: cfg.Media.MaxItems, Vault: vlt,
 	}
 }
 
@@ -80,7 +82,7 @@ func mediaForSnapshot(cfg config.Config) *media.Snapshot {
 		return nil
 	}
 	lastMediaScanAt = now
-	s := media.Scan(mediaConfig(cfg))
+	s := media.Scan(mediaConfig(cfg, nil))
 	fp := mediaFingerprint(s)
 	if fp == lastMediaFingerprint && !lastMediaSentAt.IsZero() && now.Sub(lastMediaSentAt) < 5*time.Minute {
 		return nil
@@ -139,6 +141,90 @@ func effectiveNetworkConfig(cfg config.Config) config.Config {
 	return out
 }
 
+func vaultInventory(cfg config.Config) []vault.InventoryItem {
+	items := make([]vault.InventoryItem, 0, len(cfg.Network.Devices)+2)
+	for _, d := range cfg.Network.Devices {
+		switch d.Kind {
+		case "gateway", "router", "extender", "switch", "nas":
+			items = append(items, vault.InventoryItem{ID: d.ID, Label: d.Name, Kind: d.Kind, AdminURL: d.AdminURL, IP: d.IP})
+		}
+	}
+	// KD20 and WD are already network inventory entries in the current home setup,
+	// but these guards make the vault useful with older/custom configs too.
+	has := func(id string) bool {
+		for _, i := range items {
+			if i.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	if !has("kd20") {
+		items = append(items, vault.InventoryItem{ID: "kd20", Label: "KD20 / oldnas", Kind: "nas", AdminURL: "http://" + cfg.KD20.SMBHost, IP: cfg.KD20.SMBHost})
+	}
+	if !has("wd-my-cloud") {
+		base := strings.TrimRight(cfg.Media.PublicBaseURL, "/")
+		ip := network.LocalIPv4(cfg.Network.Subnet)
+		items = append(items, vault.InventoryItem{ID: "wd-my-cloud", Label: "WD My Cloud", Kind: "nas", AdminURL: "http://" + ip, IP: ip})
+		_ = base
+	}
+	return items
+}
+
+func prepareVault(cfg *config.Config) *vault.Service {
+	if cfg == nil || !cfg.Vault.Enabled {
+		return nil
+	}
+	localBase := strings.TrimRight(cfg.Media.PublicBaseURL, "/")
+	if localBase == "" {
+		if ip := network.LocalIPv4(cfg.Network.Subnet); ip != "" {
+			localBase = "http://" + ip + ":8788"
+		}
+	}
+	vlt, err := vault.OpenOrCreate(vault.Config{Enabled: true, File: cfg.Vault.File, KeyFile: cfg.Vault.KeyFile, PinFile: cfg.Vault.PinFile, SessionMinutes: cfg.Vault.SessionMinutes, LocalBaseURL: localBase})
+	if err != nil {
+		log.Printf("VAULT: %v", err)
+		return nil
+	}
+	vlt.SetInventory(vaultInventory(*cfg))
+	// v0.18 migrates the old plaintext network-secrets.json into the encrypted vault.
+	// The plaintext file is removed only after a successful encrypted save.
+	legacy := map[string]vault.Credential{}
+	for id, c := range cfg.NetworkCredentials {
+		if strings.TrimSpace(c.Username) == "" && strings.TrimSpace(c.Password) == "" {
+			continue
+		}
+		legacy[id] = vault.Credential{ID: id, Username: c.Username, Password: c.Password}
+	}
+	if n, err := vlt.ImportLegacy(legacy); err != nil {
+		log.Printf("VAULT legacy migration: %v", err)
+	} else if len(legacy) > 0 {
+		current := vlt.Entries()
+		fullyImported := true
+		for id, c := range legacy {
+			got, ok := current[id]
+			if !ok || got.Username != c.Username || got.Password != c.Password {
+				fullyImported = false
+				break
+			}
+		}
+		if fullyImported {
+			if err := os.Remove(cfg.Network.SecretsFile); err != nil && !os.IsNotExist(err) {
+				log.Printf("VAULT migrated %d credential(s), legacy cleanup: %v", n, err)
+			} else {
+				log.Printf("VAULT legacy plaintext secrets removed after verified migration (%d new)", n)
+			}
+		}
+	}
+	if cfg.NetworkCredentials == nil {
+		cfg.NetworkCredentials = map[string]config.NetworkCredential{}
+	}
+	for id, c := range vlt.Entries() {
+		cfg.NetworkCredentials[id] = config.NetworkCredential{Username: c.Username, Password: c.Password}
+	}
+	return vlt
+}
+
 func main() {
 	cfgPath := flag.String("config", "./config.json", "config file")
 	check := flag.Bool("check", false, "check WD/KD20 connectivity and exit")
@@ -148,16 +234,30 @@ func main() {
 	destination := flag.String("destination", "", "WD destination relative to mediaRoot")
 	watchLocal := flag.Bool("watch-local", false, "run local completed-torrent auto-copy loop without cloud")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	vaultStatus := flag.Bool("vault-status", false, "print local credentials vault status and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("homehub-bridge %s %s/%s\n", version, runtime.GOOS, runtime.GOARCH)
 		return
 	}
 
-	localMode := *check || *list || *copyID > 0 || *watchLocal
+	localMode := *check || *list || *copyID > 0 || *watchLocal || *vaultStatus
 	cfg, err := config.Load(*cfgPath, !localMode)
 	if err != nil {
 		log.Fatal(err)
+	}
+	vlt := prepareVault(&cfg)
+	if *vaultStatus {
+		if vlt == nil {
+			log.Printf("VAULT: unavailable")
+			return
+		}
+		st := vlt.PublicStatus()
+		log.Printf("VAULT: initialized=%t pinConfigured=%t entries=%d localUrl=%s", st.Initialized, st.PINConfigured, len(st.Entries), st.LocalURL)
+		for _, e := range st.Entries {
+			log.Printf("VAULT ENTRY: id=%s label=%q saved=%t username=%q hasPassword=%t admin=%s", e.ID, e.Label, e.Saved, e.Username, e.HasPassword, e.AdminURL)
+		}
+		return
 	}
 	localEffective := effectiveNetworkConfig(cfg)
 	tr := transmission.New(localEffective.KD20.RPCURL, localEffective.KD20.Username, localEffective.KD20.Password)
@@ -199,7 +299,9 @@ func main() {
 		}
 	}
 
-	media.StartServer(mediaConfig(cfg))
+	if !*once {
+		media.StartServer(mediaConfig(cfg, vlt))
+	}
 
 	cloud := api.New(cfg.ServerURL, cfg.Token, cfg.ServerTLSInsecure)
 	log.Printf("HomeHub bridge %s (%s) starting", cfg.BridgeID, version)
@@ -219,7 +321,7 @@ func main() {
 	}()
 
 	for {
-		runOnce(cfg, cloud)
+		runOnce(cfg, cloud, vlt)
 		if *once {
 			return
 		}
@@ -255,7 +357,7 @@ func runCheck(cfg config.Config, tr *transmission.Client) {
 	}
 	vs := vacuum.Probe(cfg)
 	log.Printf("XIAOMI VACUUM: configured=%t online=%t controlReady=%t ip=%s note=%s", vs.Configured, vs.Online, vs.ControlReady, vs.IP, vs.Note)
-	ms := media.Scan(mediaConfig(cfg))
+	ms := media.Scan(mediaConfig(cfg, nil))
 	log.Printf("MEDIA: enabled=%t online=%t items=%d url=%s error=%s", ms.Enabled, ms.Online, ms.Count, ms.PublicBaseURL, ms.Error)
 	if failed {
 		os.Exit(2)
@@ -318,7 +420,7 @@ func runAutoCopy(cfg config.Config, tr *transmission.Client) {
 	}
 }
 
-func runOnce(cfg config.Config, cloud *api.Client) {
+func runOnce(cfg config.Config, cloud *api.Client, vlt *vault.Service) {
 	localState := cloudstate.Load(cfg.CloudStateFile)
 	effective := effectiveNetworkConfig(cfg)
 	tr := transmission.New(effective.KD20.RPCURL, effective.KD20.Username, effective.KD20.Password)
@@ -348,6 +450,10 @@ func runOnce(cfg config.Config, cloud *api.Client) {
 	s.Network = network.Probe(effective)
 	s.Vacuum = vacuum.Probe(effective)
 	s.Media = mediaForSnapshot(effective)
+	if vlt != nil {
+		st := vlt.PublicStatus()
+		s.Vault = &st
+	}
 	s.PersistentState = localState.PersistentState
 	if copyState, err := copyjob.LoadState(effective.AutoCopy.StateFile); err == nil {
 		s.LocalCopies = copyState.Copied

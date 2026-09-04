@@ -89,8 +89,8 @@
         "name": "Technicolor FGA2233",
         "kind": "gateway",
         "ip": "192.168.1.1",
-        "mac": "",
-        "adminUrl": "http://192.168.1.1",
+        "mac": "A0:B5:3C:CD:BB:AE",
+        "adminUrl": "https://192.168.1.1",
         "probePorts": [
           80,
           443
@@ -98,11 +98,11 @@
       },
       {
         "id": "archer-c6",
-        "name": "Archer C6",
+        "name": "Archer C6 v4",
         "kind": "router",
         "ip": "192.168.1.129",
-        "mac": "5C-62-8B-95-64-EA",
-        "adminUrl": "http://192.168.1.129",
+        "mac": "5C:62:8B:95:64:EB",
+        "adminUrl": "http://192.168.0.1",
         "probePorts": [
           80,
           443
@@ -110,11 +110,11 @@
       },
       {
         "id": "re220",
-        "name": "TP-Link RE220",
+        "name": "TP-Link RE220 v3",
         "kind": "extender",
-        "ip": "",
+        "ip": "192.168.0.110",
         "mac": "B4-B0-24-EF-3C-12",
-        "adminUrl": "",
+        "adminUrl": "http://192.168.0.110",
         "probePorts": [
           80,
           443
@@ -122,11 +122,11 @@
       },
       {
         "id": "re315-1",
-        "name": "TP-Link RE315 #1",
+        "name": "TP-Link RE315 #1 v1",
         "kind": "extender",
-        "ip": "",
+        "ip": "192.168.0.113",
         "mac": "DC-62-79-DD-93-86",
-        "adminUrl": "",
+        "adminUrl": "http://192.168.0.113",
         "probePorts": [
           80,
           443
@@ -134,11 +134,11 @@
       },
       {
         "id": "re315-2",
-        "name": "TP-Link RE315 #2",
+        "name": "TP-Link RE315 #2 v1",
         "kind": "extender",
-        "ip": "",
+        "ip": "192.168.0.116",
         "mac": "0C-EF-15-1B-FE-CE",
-        "adminUrl": "",
+        "adminUrl": "http://192.168.0.116",
         "probePorts": [
           80,
           443
@@ -161,5 +161,12 @@
     ],
     "secretsFile": "/DataVolume/homehub/network-secrets.json"
   },
-  "cloudStateFile": "/DataVolume/homehub/server-state.json"
+  "cloudStateFile": "/DataVolume/homehub/server-state.json",
+  "vault": {
+    "enabled": true,
+    "file": "/DataVolume/homehub/credentials.vault",
+    "keyFile": "/DataVolume/homehub/vault.key",
+    "pinFile": "/DataVolume/homehub/vault-pin.json",
+    "sessionMinutes": 10
+  }
 }
