@@ -10,9 +10,6 @@ const TIMEOUT_MS = Math.max(5000, Math.min(45000, Number(process.env.NCORE_TIMEO
 const COOKIE_SECRET = process.env.COOKIE_SECRET || "";
 const SESSION_COOKIE = "homehub_session";
 
-// finderss.it.cx currently exposes the nCore RSS search categories used by the
-// public igzard/ncore client. Search runs through the finder, while the passkey
-// remains only on the HomeHub server and is appended solely for torrent download.
 const CATEGORY_GROUPS: Record<string, string[]> = {
   all: [
     "Film (HUN SD)", "Film (HUN DVD9)", "Film (HUN DVD)", "Film (ENG HD)",
@@ -83,16 +80,59 @@ function cleanText(value: string) {
   return decodeXml(value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
 }
 
+function normalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("hu-HU")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function queryMatches(title: string, query: string) {
+  const hay = normalize(title);
+  const words = normalize(query).split(" ").filter(Boolean);
+  return words.length > 0 && words.every((w) => hay.includes(w));
+}
+
+function directRssUrl() {
+  const url = new URL(BASE + "/rss.php");
+  url.searchParams.set("key", PASSKEY);
+  return url.toString();
+}
+
+async function fetchDirectRss() {
+  const response = await fetch(directRssUrl(), {
+    headers: {
+      "user-agent": process.env.NCORE_USER_AGENT || "Mozilla/5.0 HomeHub/0.23.9",
+      "accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.5",
+      "accept-language": "hu-HU,hu;q=0.9,en;q=0.7",
+      "cache-control": "no-cache"
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`ncore_rss_http_${response.status}`);
+  const head = body.slice(0, 12000);
+  if (/just a moment|attention required|cf-chl-|cloudflare/i.test(head)) throw new Error("ncore_rss_cloudflare");
+  if (/login\.php|name\s*=\s*["']nev["']/i.test(head)) throw new Error("ncore_passkey_invalid");
+  if (!/<(?:rss|feed)\b/i.test(body) && !/<item\b/i.test(body) && !/rss_dl\.php\/id=/i.test(body)) {
+    throw new Error("ncore_rss_invalid_response");
+  }
+  return body;
+}
+
 function finderUrl(query: string, category: string) {
   const sep = FINDER.includes("?") ? "&" : "?";
-  // Mirror the URL shape used by the public igzard/ncore client.
   return `${FINDER}${sep}&s=${encodeURIComponent(query)}&cat=${encodeURIComponent(category)},`;
 }
 
 async function fetchFinder(query: string, category: string) {
   const response = await fetch(finderUrl(query, category), {
     headers: {
-      "user-agent": process.env.NCORE_USER_AGENT || "Mozilla/5.0 HomeHub/0.23.8",
+      "user-agent": process.env.NCORE_USER_AGENT || "Mozilla/5.0 HomeHub/0.23.9",
       "accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.5",
       "accept-language": "hu-HU,hu;q=0.9,en;q=0.7",
       "cache-control": "no-cache"
@@ -106,7 +146,7 @@ async function fetchFinder(query: string, category: string) {
   return body;
 }
 
-type FinderResult = {
+type NcoreResult = {
   id: string;
   title: string;
   size: string;
@@ -120,101 +160,199 @@ type FinderResult = {
   source: string;
 };
 
-function parseFinderRss(xml: string, requestedCategory: string): FinderResult[] {
-  const results: FinderResult[] = [];
+function itemId(block: string) {
+  const decoded = decodeXml(block);
+  return decoded.match(/rss_dl\.php\/id=(\d+)/i)?.[1]
+    || decoded.match(/(?:details|download)\.php\?[^\s"'<>]*[?&]id=(\d+)/i)?.[1]
+    || decoded.match(/[?&]id=(\d+)/i)?.[1]
+    || "";
+}
+
+function categoryKind(label: string) {
+  return /^Sorozat/i.test(label) ? "tv" : /^Film/i.test(label) ? "movies" : "all";
+}
+
+function parseRssItems(xml: string, source: string, requestedCategory = ""): NcoreResult[] {
+  const results: NcoreResult[] = [];
   const items = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)];
   for (const match of items) {
     const block = match[1] || "";
     const title = cleanText(xmlValue(block, "title"));
-    const link = xmlValue(block, "link");
     const categoryLabel = cleanText(xmlValue(block, "category")) || requestedCategory;
     const uploadedAt = cleanText(xmlValue(block, "pubDate"));
-    const id = link.match(/[?&]id=(\d+)/i)?.[1] || "";
+    const id = itemId(block);
     if (!id || !title) continue;
     results.push({
       id,
       title,
-      size: "",
-      seeds: 0,
-      leech: 0,
-      category: categoryLabel.startsWith("Sorozat") ? "tv" : "movies",
+      size: cleanText(xmlValue(block, "size")),
+      seeds: Number(cleanText(xmlValue(block, "seed")) || cleanText(xmlValue(block, "seeds"))) || 0,
+      leech: Number(cleanText(xmlValue(block, "leech")) || cleanText(xmlValue(block, "leechers"))) || 0,
+      category: categoryKind(categoryLabel),
       categoryLabel,
       uploadedAt,
       detailUrl: `${BASE}/details.php?id=${encodeURIComponent(id)}`,
       downloadReady: Boolean(PASSKEY),
-      source: "ncore-rss"
+      source
     });
   }
   return results;
 }
 
-async function searchNcore(query: string, category: string) {
-  const categories = CATEGORY_GROUPS[category] || CATEGORY_GROUPS.all;
-  const combined: FinderResult[] = [];
-  const diagnostics = { finder: FINDER, categoriesTried: categories.length, categoriesOk: 0, rssItems: 0 };
+async function searchViaDirectRss(query: string, category: string) {
+  const xml = await fetchDirectRss();
+  const all = parseRssItems(xml, "ncore-rss");
+  const results = all.filter((item) => queryMatches(item.title, query) && (category === "all" || item.category === category)).slice(0, LIMIT);
+  return { results, totalItems: all.length };
+}
 
-  // Keep finder traffic modest while still keeping the UI responsive.
+async function searchViaFinder(query: string, category: string) {
+  const categories = CATEGORY_GROUPS[category] || CATEGORY_GROUPS.all;
+  const combined: NcoreResult[] = [];
+  const errors: string[] = [];
+  let categoriesOk = 0;
+  let rssItems = 0;
+
   for (let i = 0; i < categories.length; i += 4) {
     const batch = categories.slice(i, i + 4);
     const settled = await Promise.allSettled(batch.map(async (cat) => {
       const xml = await fetchFinder(query, cat);
-      return parseFinderRss(xml, cat);
+      return parseRssItems(xml, "ncore-finder", cat);
     }));
     settled.forEach((entry) => {
-      if (entry.status !== "fulfilled") return;
-      diagnostics.categoriesOk += 1;
-      diagnostics.rssItems += entry.value.length;
-      combined.push(...entry.value);
+      if (entry.status === "fulfilled") {
+        categoriesOk += 1;
+        rssItems += entry.value.length;
+        combined.push(...entry.value);
+      } else {
+        const reason = entry.reason instanceof Error ? entry.reason.message : String(entry.reason);
+        if (reason && !errors.includes(reason)) errors.push(reason);
+      }
     });
     if (combined.length >= LIMIT * 2) break;
   }
 
   const seen = new Set<string>();
-  const unique: FinderResult[] = [];
+  const results: NcoreResult[] = [];
   for (const item of combined) {
     if (seen.has(item.id)) continue;
     seen.add(item.id);
-    unique.push(item);
-    if (unique.length >= LIMIT) break;
+    results.push(item);
+    if (results.length >= LIMIT) break;
   }
-
-  return { results: unique, diagnostics };
+  return { results, categoriesTried: categories.length, categoriesOk, rssItems, errors: errors.slice(0, 3) };
 }
 
-async function probeFinder() {
+async function searchNcore(query: string, category: string) {
+  let directError = "";
+  try {
+    const direct = await searchViaDirectRss(query, category);
+    if (direct.results.length) {
+      return {
+        results: direct.results,
+        diagnostics: { mode: "direct-rss", directRssItems: direct.totalItems, finderTried: false }
+      };
+    }
+    // The personal nCore RSS feed contains only a recent slice. If the query is
+    // not in that slice, try the external finder as a secondary source.
+    const finder = await searchViaFinder(query, category);
+    return {
+      results: finder.results,
+      diagnostics: {
+        mode: "direct-rss+finder",
+        directRssItems: direct.totalItems,
+        categoriesTried: finder.categoriesTried,
+        categoriesOk: finder.categoriesOk,
+        rssItems: finder.rssItems,
+        finderErrors: finder.errors
+      }
+    };
+  } catch (err) {
+    directError = err instanceof Error ? err.message : String(err);
+  }
+
+  const finder = await searchViaFinder(query, category);
+  return {
+    results: finder.results,
+    diagnostics: {
+      mode: "finder-fallback",
+      directRssError: directError,
+      categoriesTried: finder.categoriesTried,
+      categoriesOk: finder.categoriesOk,
+      rssItems: finder.rssItems,
+      finderErrors: finder.errors
+    }
+  };
+}
+
+async function probeSources() {
+  let rssOnline = false;
+  let rssItems = 0;
+  let rssError = "";
+  try {
+    const xml = await fetchDirectRss();
+    rssOnline = true;
+    rssItems = parseRssItems(xml, "ncore-rss").length;
+  } catch (err) {
+    rssError = err instanceof Error ? err.message : String(err);
+  }
+
+  let finderOnline = false;
+  let finderStatus = 0;
   try {
     const response = await fetch(FINDER, {
-      headers: { "user-agent": "Mozilla/5.0 HomeHub/0.23.8", "accept": "text/html,application/xml;q=0.9,*/*;q=0.5" },
+      headers: { "user-agent": "Mozilla/5.0 HomeHub/0.23.9", "accept": "text/html,application/xml;q=0.9,*/*;q=0.5" },
       redirect: "follow",
       signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, 10000))
     });
-    return { finderOnline: response.ok, finderStatus: response.status };
-  } catch {
-    return { finderOnline: false, finderStatus: 0 };
-  }
+    finderOnline = response.ok;
+    finderStatus = response.status;
+  } catch {}
+
+  return { rssOnline, rssItems, rssError, finderOnline, finderStatus };
 }
 
 async function torrentFile(id: string) {
   if (!PASSKEY) throw new Error("ncore_passkey_missing");
-  const url = new URL(BASE + "/download.php");
-  url.searchParams.set("id", id);
-  url.searchParams.set("key", PASSKEY);
-  const response = await fetch(url.toString(), {
-    headers: {
-      "user-agent": process.env.NCORE_USER_AGENT || "Mozilla/5.0 HomeHub/0.23.8",
-      "accept": "application/x-bittorrent,application/octet-stream,*/*;q=0.5"
-    },
-    redirect: "follow",
-    signal: AbortSignal.timeout(TIMEOUT_MS)
-  });
-  const contentType = response.headers.get("content-type") || "";
-  const data = Buffer.from(await response.arrayBuffer());
-  const head = data.subarray(0, 1500).toString("utf8");
-  if (!response.ok) throw new Error(`ncore_download_http_${response.status}`);
-  if (/text\/html/i.test(contentType) || /just a moment|attention required|cf-chl-|cloudflare/i.test(head)) throw new Error("ncore_download_cloudflare");
-  if (/login\.php|name\s*=\s*["']nev["']/i.test(head)) throw new Error("ncore_session_expired");
-  if (!data.length || data.length > 20 * 1024 * 1024) throw new Error("ncore_invalid_torrent_file");
-  return data;
+
+  const candidates = [
+    `${BASE}/rss_dl.php/id=${encodeURIComponent(id)}/key=${encodeURIComponent(PASSKEY)}`,
+    `${BASE}/download.php?id=${encodeURIComponent(id)}&key=${encodeURIComponent(PASSKEY)}`
+  ];
+  let lastError = "ncore_download_failed";
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": process.env.NCORE_USER_AGENT || "Mozilla/5.0 HomeHub/0.23.9",
+          "accept": "application/x-bittorrent,application/octet-stream,*/*;q=0.5"
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const data = Buffer.from(await response.arrayBuffer());
+      const head = data.subarray(0, 1500).toString("utf8");
+      if (!response.ok) { lastError = `ncore_download_http_${response.status}`; continue; }
+      if (/text\/html/i.test(contentType) || /just a moment|attention required|cf-chl-|cloudflare/i.test(head)) {
+        lastError = "ncore_download_cloudflare";
+        continue;
+      }
+      if (/login\.php|name\s*=\s*["']nev["']/i.test(head)) {
+        lastError = "ncore_passkey_invalid";
+        continue;
+      }
+      if (!data.length || data.length > 20 * 1024 * 1024) {
+        lastError = "ncore_invalid_torrent_file";
+        continue;
+      }
+      return data;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+  }
+  throw new Error(lastError);
 }
 
 function cleanFilename(value: string) {
@@ -227,7 +365,7 @@ function register(app: any) {
 
   app.get("/api/ncore/status", requireAdmin, async (_req: any, res: any) => {
     const configured = ENABLED && Boolean(PASSKEY);
-    const finder = configured ? await probeFinder() : { finderOnline: false, finderStatus: 0 };
+    const sources = configured ? await probeSources() : { rssOnline: false, rssItems: 0, rssError: "ncore_passkey_missing", finderOnline: false, finderStatus: 0 };
     res.json({
       enabled: ENABLED,
       configured,
@@ -237,7 +375,7 @@ function register(app: any) {
       finderUrl: FINDER,
       categories: Object.keys(CATEGORY_GROUPS),
       searchLimit: LIMIT,
-      ...finder
+      ...sources
     });
   });
 
@@ -268,7 +406,7 @@ function register(app: any) {
       res.send(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const status = message === "ncore_download_cloudflare" ? 503 : message === "ncore_session_expired" ? 401 : 502;
+      const status = message === "ncore_download_cloudflare" ? 503 : message === "ncore_passkey_invalid" ? 401 : 502;
       res.status(status).json({ error: message });
     }
   });
