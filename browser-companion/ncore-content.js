@@ -157,6 +157,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const command = message.command || {};
   (async () => {
     try {
+      if (command.action === 'ping') return { ok: true, result: { ready: true } };
       if (command.action === 'search') return { ok: true, result: await searchNcore(command.payload || {}) };
       if (command.action === 'download') return { ok: true, result: await downloadTorrent(command.payload || {}) };
       return { ok: false, error: 'ncore_browser_unknown_command' };
