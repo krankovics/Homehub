@@ -14,9 +14,27 @@
     return data;
   }
 
+  function errorText(code) {
+    if (code === 'ncore_session_expired') return 'Az nCore Cookie lejárt vagy nem érvényes. Frissítsd a Render NCORE_COOKIE változót.';
+    if (code === 'ncore_cloudflare_challenge') return 'Az nCore Cloudflare ellenőrzést kér a Render felé. A böngészős Cookie önmagában most nem elég.';
+    if (code === 'ncore_not_configured') return 'Az nCore nincs konfigurálva.';
+    if (code === 'ncore_download_key_missing') return 'A letöltési kulcs nem található. Állíts be NCORE_RSS_KEY értéket.';
+    return code || 'Ismeretlen nCore hiba.';
+  }
+
+  function stateInfo() {
+    if (!status?.configured) return {ok:false, label:'Nincs konfigurálva'};
+    if (status?.authenticated === false) return {ok:false, label:'Nincs belépve'};
+    if (status?.authenticated === true) return {ok:true, label:'Kapcsolódva'};
+    return {ok:true, label:'Kapcsolódás kész'};
+  }
+
   function setupMarkup() {
     if (!status?.configured) {
       return `<div class="ncoreSetupV236"><div><strong>nCore nincs konfigurálva</strong><span>A kereső használatához Render Environmentben add meg az <code>NCORE_COOKIE</code> változót. A hitelesítési adat nem jelenik meg a HomeHub felületén.</span></div></div>`;
+    }
+    if (status?.authenticated === false) {
+      return `<div class="ncoreSetupV236"><div><strong>nCore belépés sikertelen</strong><span>${esc(errorText(status.error))}</span></div></div>`;
     }
     return `<form class="ncoreSearchFormV236">
       <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés az nCore-on…" minlength="2" required></label>
@@ -36,12 +54,16 @@
   function panel() {
     const el = document.createElement('section');
     el.className = 'panel ncorePanelV236';
-    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Találat keresése és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${status?.configured?'ok':''}">${status?.configured?'Kapcsolódás kész':'Nincs konfigurálva'}</span></div>${setupMarkup()}`;
+    const st = stateInfo();
+    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Találat keresése és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
     return el;
   }
 
-  function resultsMarkup(items) {
-    if (!items?.length) return `<div class="ncoreEmptyV236">Nincs találat. Próbálj rövidebb vagy másik keresőkifejezést.</div>`;
+  function resultsMarkup(items, diagnostics) {
+    if (!items?.length) {
+      const debug = diagnostics ? `<small class="ncoreDiagV237">nCore oldal: ${esc(diagnostics.title || '—')} · torrent blokkok: ${Number(diagnostics.boxTorrentCount || 0)} · adatlap linkek: ${Number(diagnostics.detailsCount || 0)}</small>` : '';
+      return `<div class="ncoreEmptyV236">Nincs találat. Próbálj rövidebb vagy másik keresőkifejezést.${debug}</div>`;
+    }
     return items.map(item => `<article class="ncoreResultV236" data-id="${esc(item.id)}" data-title="${esc(item.title)}">
       <div class="ncoreResultMainV236"><strong title="${esc(item.title)}">${esc(item.title)}</strong><div class="ncoreMetaV236"><span>${esc(item.size || '—')}</span><span>↑ ${Number(item.seeds||0)} seeder</span><span>↓ ${Number(item.leech||0)} leecher</span></div></div>
       <div class="ncoreResultActionsV236"><a href="${esc(item.detailUrl)}" target="_blank" rel="noopener noreferrer">Adatlap</a><button type="button" ${item.downloadReady?'':'disabled'}>Hozzáadás KD20-hoz</button></div>
@@ -58,7 +80,7 @@
       const r = await fetch(`/api/ncore/torrent/${encodeURIComponent(id)}?name=${encodeURIComponent(title)}`, {credentials:'same-origin', cache:'no-store'});
       if (!r.ok) {
         let message = `HTTP ${r.status}`;
-        try { const j = await r.json(); message = j.error || message; } catch {}
+        try { const j = await r.json(); message = errorText(j.error || message); } catch {}
         throw new Error(message);
       }
       const blob = await r.blob();
@@ -95,13 +117,13 @@
       out.innerHTML = '<div class="ncoreEmptyV236">Keresés folyamatban…</div>';
       try {
         const data = await json(`/api/ncore/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
-        out.innerHTML = resultsMarkup(data.results || []);
+        out.innerHTML = resultsMarkup(data.results || [], data.diagnostics);
         out.querySelectorAll('.ncoreResultV236').forEach(article => {
           const button = article.querySelector('button');
           if (button) button.addEventListener('click', () => addToKd20(article, button));
         });
       } catch (err) {
-        out.innerHTML = `<div class="ncoreErrorV236">${esc(err instanceof Error ? err.message : String(err))}</div>`;
+        out.innerHTML = `<div class="ncoreErrorV236">${esc(errorText(err instanceof Error ? err.message : String(err)))}</div>`;
       } finally {
         submit.disabled = false;
         submit.textContent = 'Keresés';
