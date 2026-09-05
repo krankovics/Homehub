@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,4 +97,22 @@ func (c *Client) Complete(id string, ok bool, msg string) (SnapshotResponse, err
 	var out SnapshotResponse
 	err := c.do(http.MethodPost, "/api/bridge/commands/"+url.PathEscape(id)+"/complete", map[string]any{"ok": ok, "message": msg}, &out)
 	return out, err
+}
+
+// NcoreCommands polls the short-lived nCore broker embedded in the Render app.
+// These commands are intentionally separate from persistent HomeHub commands:
+// search results and private tracker actions should not become part of the
+// persistent state backup.
+func (c *Client) NcoreCommands(bridgeID, version string, configured bool) ([]Command, error) {
+	var x []Command
+	q := url.Values{}
+	q.Set("bridgeId", bridgeID)
+	q.Set("version", version)
+	q.Set("configured", strconv.FormatBool(configured))
+	err := c.do(http.MethodGet, "/api/ncore/bridge/commands?"+q.Encode(), nil, &x)
+	return x, err
+}
+
+func (c *Client) NcoreComplete(id string, ok bool, msg string) error {
+	return c.do(http.MethodPost, "/api/ncore/bridge/commands/"+url.PathEscape(id)+"/complete", map[string]any{"ok": ok, "message": msg}, nil)
 }
