@@ -16,7 +16,7 @@ import (
 	"homehub/bridge/internal/vault"
 )
 
-const ncoreBridgeVersion = "0.24.0"
+const ncoreBridgeVersion = "0.24.1"
 
 func ncoreConfigPath() string {
 	for i, arg := range os.Args {
