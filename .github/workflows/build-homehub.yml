@@ -26,6 +26,11 @@ jobs:
       - name: Build web and server
         run: npm run build
 
+      - name: Package browser companion
+        run: |
+          cd browser-companion
+          zip -r ../homehub-ncore-companion-0.1.0.zip .
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -60,5 +65,13 @@ jobs:
           path: |
             homehub-bridge-linux-armv7
             homehub-bridge-linux-amd64
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload browser companion
+        uses: actions/upload-artifact@v4
+        with:
+          name: homehub-ncore-companion-0.1.0
+          path: homehub-ncore-companion-0.1.0.zip
           if-no-files-found: error
           retention-days: 30
