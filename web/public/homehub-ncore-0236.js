@@ -1,5 +1,6 @@
 (() => {
   let mounted = false;
+  let mounting = false;
   let status = null;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -40,7 +41,7 @@
   }
 
   function resultsMarkup(items) {
-    if (!items?.length) return `<div class="ncoreEmptyV236">Nincs találat.</div>`;
+    if (!items?.length) return `<div class="ncoreEmptyV236">Nincs találat. Próbálj rövidebb vagy másik keresőkifejezést.</div>`;
     return items.map(item => `<article class="ncoreResultV236" data-id="${esc(item.id)}" data-title="${esc(item.title)}">
       <div class="ncoreResultMainV236"><strong title="${esc(item.title)}">${esc(item.title)}</strong><div class="ncoreMetaV236"><span>${esc(item.size || '—')}</span><span>↑ ${Number(item.seeds||0)} seeder</span><span>↓ ${Number(item.leech||0)} leecher</span></div></div>
       <div class="ncoreResultActionsV236"><a href="${esc(item.detailUrl)}" target="_blank" rel="noopener noreferrer">Adatlap</a><button type="button" ${item.downloadReady?'':'disabled'}>Hozzáadás KD20-hoz</button></div>
@@ -108,21 +109,55 @@
     });
   }
 
+  function dedupe(downloads) {
+    const panels = [...downloads.querySelectorAll('.ncorePanelV236')];
+    if (panels.length <= 1) return panels[0] || null;
+    const keep = panels.find(p => p.querySelector('input')?.value) || panels[0];
+    panels.forEach(p => { if (p !== keep) p.remove(); });
+    return keep;
+  }
+
   async function ensure() {
     const downloads = document.querySelector('.torrentList')?.closest('.tabPanel');
     if (!downloads) { mounted = false; return; }
-    if (downloads.querySelector('.ncorePanelV236')) { mounted = true; return; }
-    try { status = await json('/api/ncore/status'); }
-    catch { status = {configured:false}; }
-    const el = panel();
-    const add = downloads.querySelector('.panel.add');
-    if (add) downloads.insertBefore(el, add); else downloads.prepend(el);
-    bind(el);
-    mounted = true;
+    const existing = dedupe(downloads);
+    if (existing) { mounted = true; return; }
+    if (mounting) return;
+    mounting = true;
+    try {
+      status = await json('/api/ncore/status');
+      const currentDownloads = document.querySelector('.torrentList')?.closest('.tabPanel');
+      if (!currentDownloads) { mounted = false; return; }
+      const afterWait = dedupe(currentDownloads);
+      if (afterWait) { mounted = true; return; }
+      const el = panel();
+      const add = currentDownloads.querySelector('.panel.add');
+      if (add) currentDownloads.insertBefore(el, add); else currentDownloads.prepend(el);
+      bind(el);
+      mounted = true;
+    } catch {
+      status = {configured:false};
+      const currentDownloads = document.querySelector('.torrentList')?.closest('.tabPanel');
+      if (currentDownloads && !dedupe(currentDownloads)) {
+        const el = panel();
+        const add = currentDownloads.querySelector('.panel.add');
+        if (add) currentDownloads.insertBefore(el, add); else currentDownloads.prepend(el);
+        bind(el);
+        mounted = true;
+      }
+    } finally {
+      mounting = false;
+    }
   }
 
-  const observer = new MutationObserver(() => { if (!mounted || !document.querySelector('.ncorePanelV236')) ensure(); });
+  let scheduled = false;
+  const scheduleEnsure = () => {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(() => { scheduled = false; ensure(); }, 60);
+  };
+  const observer = new MutationObserver(scheduleEnsure);
   observer.observe(document.documentElement, {subtree:true, childList:true});
-  setInterval(ensure, 1500);
+  setInterval(ensure, 2000);
   ensure();
 })();
