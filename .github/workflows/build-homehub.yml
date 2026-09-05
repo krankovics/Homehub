@@ -56,7 +56,7 @@ jobs:
       - name: Upload bridge binaries
         uses: actions/upload-artifact@v4
         with:
-          name: homehub-bridge-0.24.0
+          name: homehub-bridge-0.24.1
           path: |
             homehub-bridge-linux-armv7
             homehub-bridge-linux-amd64
