@@ -1,6 +1,6 @@
-const VERSION = "0.24.6";
+const VERSION = "0.24.7";
 const CACHE = `homehub-v${VERSION}`;
-const CORE = ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+const CORE = ["/manifest.webmanifest?v=0247", "/icon-192.png?v=0247", "/icon-512.png?v=0247"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -15,16 +15,6 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith("homehub-") && key !== CACHE).map((key) => caches.delete(key)));
     await self.clients.claim();
-
-    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    await Promise.all(clients.map(async (client) => {
-      try {
-        const url = new URL(client.url);
-        if (url.origin !== self.location.origin || url.searchParams.get("hhv") === VERSION) return;
-        url.searchParams.set("hhv", VERSION);
-        await client.navigate(url.toString());
-      } catch (_) {}
-    }));
   })());
 });
 
@@ -48,14 +38,14 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
       }
       return response;
-    } catch (_) {
+    } catch (error) {
       const cached = await caches.match(event.request);
       if (cached) return cached;
       if (event.request.mode === "navigate") {
         const shell = await caches.match("/");
         if (shell) return shell;
       }
-      throw _;
+      throw error;
     }
   })());
 });
