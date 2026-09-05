@@ -135,14 +135,20 @@ func runNcoreBridgeLoop(cfg config.Config) {
 	log.Printf("NCORE: WD bridge extension %s starting", ncoreBridgeVersion)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	var lastBrokerError string
+	var lastBrokerErrorAt time.Time
 	for {
 		cred, configured := ncoreCredential(cfg)
 		cmds, err := cloud.NcoreCommands(cfg.BridgeID, ncoreBridgeVersion, configured)
 		if err != nil {
-			// Render may still be deploying the matching API. Keep this quiet enough
-			// not to bury the normal bridge log.
-			log.Printf("NCORE broker: %v", err)
+			msg := err.Error()
+			if msg != lastBrokerError || time.Since(lastBrokerErrorAt) >= 60*time.Second {
+				log.Printf("NCORE broker: %v", err)
+				lastBrokerError = msg
+				lastBrokerErrorAt = time.Now()
+			}
 		} else {
+			lastBrokerError = ""
 			for _, cmd := range cmds {
 				log.Printf("NCORE COMMAND START id=%s type=%s", cmd.ID, cmd.Type)
 				if !configured {
