@@ -4,6 +4,12 @@
   let status = null;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dateText = (v) => {
+    if (!v) return '';
+    const d = new Date(v);
+    if (!Number.isFinite(d.getTime())) return '';
+    return d.toLocaleString('hu-HU', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  };
 
   async function json(url, options) {
     const r = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options});
@@ -15,26 +21,24 @@
   }
 
   function errorText(code) {
-    if (code === 'ncore_session_expired') return 'Az nCore Cookie lejárt vagy nem érvényes. Frissítsd a Render NCORE_COOKIE változót.';
-    if (code === 'ncore_cloudflare_challenge') return 'Az nCore Cloudflare ellenőrzést kér a Render felé. A böngészős Cookie önmagában most nem elég.';
-    if (code === 'ncore_not_configured') return 'Az nCore nincs konfigurálva.';
-    if (code === 'ncore_download_key_missing') return 'A letöltési kulcs nem található. Állíts be NCORE_RSS_KEY értéket.';
+    if (code === 'ncore_passkey_missing') return 'Az nCore passkey nincs beállítva. Add meg Renderben az NCORE_PASSKEY változót.';
+    if (code === 'ncore_finder_invalid_response') return 'Az RSS kereső most nem adott értelmezhető választ.';
+    if (/^ncore_finder_http_/.test(code || '')) return `Az RSS kereső nem elérhető (${String(code).replace('ncore_finder_http_','HTTP ')}).`;
+    if (code === 'ncore_download_cloudflare') return 'A keresés működik, de a .torrent letöltését az nCore Cloudflare blokkolta a Render felől. A következő lépésben ezt a KD20/WD helyi kapcsolaton adjuk át.';
+    if (code === 'ncore_session_expired') return 'Az nCore letöltési hozzáférés elutasítva. Ellenőrizd a passkey-t.';
+    if (code === 'ncore_invalid_torrent_file') return 'Az nCore nem érvényes .torrent fájlt adott vissza.';
     return code || 'Ismeretlen nCore hiba.';
   }
 
   function stateInfo() {
-    if (!status?.configured) return {ok:false, label:'Nincs konfigurálva'};
-    if (status?.authenticated === false) return {ok:false, label:'Nincs belépve'};
-    if (status?.authenticated === true) return {ok:true, label:'Kapcsolódva'};
+    if (!status?.configured) return {ok:false, label:'Passkey szükséges'};
+    if (status?.mode === 'passkey-rss') return {ok:true, label:status?.finderOnline === false ? 'Passkey kész · RSS offline' : 'Passkey · RSS kész'};
     return {ok:true, label:'Kapcsolódás kész'};
   }
 
   function setupMarkup() {
     if (!status?.configured) {
-      return `<div class="ncoreSetupV236"><div><strong>nCore nincs konfigurálva</strong><span>A kereső használatához Render Environmentben add meg az <code>NCORE_COOKIE</code> változót. A hitelesítési adat nem jelenik meg a HomeHub felületén.</span></div></div>`;
-    }
-    if (status?.authenticated === false) {
-      return `<div class="ncoreSetupV236"><div><strong>nCore belépés sikertelen</strong><span>${esc(errorText(status.error))}</span></div></div>`;
+      return `<div class="ncoreSetupV236"><div><strong>nCore passkey szükséges</strong><span>A böngészős Cookie helyett add meg Render Environmentben az <code>NCORE_PASSKEY</code> értéket. A HomeHub a keresést RSS-en végzi, így nem kell a Rendernek az nCore Cloudflare belépési ellenőrzését megkerülnie.</span></div></div>`;
     }
     return `<form class="ncoreSearchFormV236">
       <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés az nCore-on…" minlength="2" required></label>
@@ -42,10 +46,6 @@
         <option value="all">Minden</option>
         <option value="movies">Film</option>
         <option value="tv">Sorozat</option>
-        <option value="music">Zene</option>
-        <option value="games">Játék</option>
-        <option value="software">Program</option>
-        <option value="books">E-könyv</option>
       </select>
       <button type="submit">Keresés</button>
     </form><div class="ncoreResultsV236"><div class="ncoreEmptyV236">Írj be legalább 2 karaktert.</div></div>`;
@@ -55,19 +55,28 @@
     const el = document.createElement('section');
     el.className = 'panel ncorePanelV236';
     const st = stateInfo();
-    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Találat keresése és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
+    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>RSS-alapú keresés és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
     return el;
   }
 
   function resultsMarkup(items, diagnostics) {
     if (!items?.length) {
-      const debug = diagnostics ? `<small class="ncoreDiagV237">nCore oldal: ${esc(diagnostics.title || '—')} · torrent blokkok: ${Number(diagnostics.boxTorrentCount || 0)} · adatlap linkek: ${Number(diagnostics.detailsCount || 0)}</small>` : '';
+      const debug = diagnostics ? `<small class="ncoreDiagV237">RSS kategóriák: ${Number(diagnostics.categoriesOk || 0)}/${Number(diagnostics.categoriesTried || 0)} · RSS elemek: ${Number(diagnostics.rssItems || 0)}</small>` : '';
       return `<div class="ncoreEmptyV236">Nincs találat. Próbálj rövidebb vagy másik keresőkifejezést.${debug}</div>`;
     }
-    return items.map(item => `<article class="ncoreResultV236" data-id="${esc(item.id)}" data-title="${esc(item.title)}">
-      <div class="ncoreResultMainV236"><strong title="${esc(item.title)}">${esc(item.title)}</strong><div class="ncoreMetaV236"><span>${esc(item.size || '—')}</span><span>↑ ${Number(item.seeds||0)} seeder</span><span>↓ ${Number(item.leech||0)} leecher</span></div></div>
-      <div class="ncoreResultActionsV236"><a href="${esc(item.detailUrl)}" target="_blank" rel="noopener noreferrer">Adatlap</a><button type="button" ${item.downloadReady?'':'disabled'}>Hozzáadás KD20-hoz</button></div>
-    </article>`).join('');
+    return items.map(item => {
+      const meta = [
+        item.categoryLabel || '',
+        dateText(item.uploadedAt),
+        item.size || '',
+        Number(item.seeds || 0) > 0 ? `↑ ${Number(item.seeds)} seeder` : '',
+        Number(item.leech || 0) > 0 ? `↓ ${Number(item.leech)} leecher` : ''
+      ].filter(Boolean).map(x => `<span>${esc(x)}</span>`).join('');
+      return `<article class="ncoreResultV236" data-id="${esc(item.id)}" data-title="${esc(item.title)}">
+        <div class="ncoreResultMainV236"><strong title="${esc(item.title)}">${esc(item.title)}</strong><div class="ncoreMetaV236">${meta}</div></div>
+        <div class="ncoreResultActionsV236"><a href="${esc(item.detailUrl)}" target="_blank" rel="noopener noreferrer">Adatlap</a><button type="button" ${item.downloadReady?'':'disabled'}>Hozzáadás KD20-hoz</button></div>
+      </article>`;
+    }).join('');
   }
 
   async function addToKd20(article, button) {
@@ -105,7 +114,8 @@
 
   function bind(el) {
     const form = el.querySelector('.ncoreSearchFormV236');
-    if (form) form.addEventListener('submit', async e => {
+    if (!form) return;
+    form.addEventListener('submit', async e => {
       e.preventDefault();
       const q = String(form.elements.q.value || '').trim();
       const category = String(form.elements.category.value || 'all');
@@ -150,8 +160,7 @@
       status = await json('/api/ncore/status');
       const currentDownloads = document.querySelector('.torrentList')?.closest('.tabPanel');
       if (!currentDownloads) { mounted = false; return; }
-      const afterWait = dedupe(currentDownloads);
-      if (afterWait) { mounted = true; return; }
+      if (dedupe(currentDownloads)) { mounted = true; return; }
       const el = panel();
       const add = currentDownloads.querySelector('.panel.add');
       if (add) currentDownloads.insertBefore(el, add); else currentDownloads.prepend(el);
