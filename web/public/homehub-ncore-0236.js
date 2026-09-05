@@ -22,23 +22,27 @@
 
   function errorText(code) {
     if (code === 'ncore_passkey_missing') return 'Az nCore passkey nincs beállítva. Add meg Renderben az NCORE_PASSKEY változót.';
-    if (code === 'ncore_finder_invalid_response') return 'Az RSS kereső most nem adott értelmezhető választ.';
-    if (/^ncore_finder_http_/.test(code || '')) return `Az RSS kereső nem elérhető (${String(code).replace('ncore_finder_http_','HTTP ')}).`;
-    if (code === 'ncore_download_cloudflare') return 'A keresés működik, de a .torrent letöltését az nCore Cloudflare blokkolta a Render felől. A következő lépésben ezt a KD20/WD helyi kapcsolaton adjuk át.';
-    if (code === 'ncore_session_expired') return 'Az nCore letöltési hozzáférés elutasítva. Ellenőrizd a passkey-t.';
+    if (code === 'ncore_passkey_invalid') return 'Az nCore elutasította a passkey-t. Ellenőrizd az NCORE_PASSKEY értékét.';
+    if (code === 'ncore_rss_cloudflare') return 'Az nCore közvetlen RSS feedjét Cloudflare blokkolta a Render felől.';
+    if (code === 'ncore_rss_invalid_response') return 'Az nCore RSS feed most nem adott értelmezhető választ.';
+    if (/^ncore_rss_http_/.test(code || '')) return `Az nCore RSS feed nem elérhető (${String(code).replace('ncore_rss_http_','HTTP ')}).`;
+    if (code === 'ncore_finder_invalid_response') return 'A külső RSS kereső most nem adott értelmezhető választ.';
+    if (/^ncore_finder_http_/.test(code || '')) return `A külső RSS kereső nem elérhető (${String(code).replace('ncore_finder_http_','HTTP ')}).`;
+    if (code === 'ncore_download_cloudflare') return 'A keresés működik, de a .torrent letöltését az nCore Cloudflare blokkolta a Render felől.';
     if (code === 'ncore_invalid_torrent_file') return 'Az nCore nem érvényes .torrent fájlt adott vissza.';
     return code || 'Ismeretlen nCore hiba.';
   }
 
   function stateInfo() {
     if (!status?.configured) return {ok:false, label:'Passkey szükséges'};
-    if (status?.mode === 'passkey-rss') return {ok:true, label:status?.finderOnline === false ? 'Passkey kész · RSS offline' : 'Passkey · RSS kész'};
-    return {ok:true, label:'Kapcsolódás kész'};
+    if (status?.rssOnline === true) return {ok:true, label:`Passkey kész · nCore RSS online${Number(status?.rssItems||0) ? ` (${Number(status.rssItems)})` : ''}`};
+    if (status?.finderOnline === true) return {ok:true, label:'Passkey kész · finder online'};
+    return {ok:false, label:'Passkey kész · RSS offline'};
   }
 
   function setupMarkup() {
     if (!status?.configured) {
-      return `<div class="ncoreSetupV236"><div><strong>nCore passkey szükséges</strong><span>A böngészős Cookie helyett add meg Render Environmentben az <code>NCORE_PASSKEY</code> értéket. A HomeHub a keresést RSS-en végzi, így nem kell a Rendernek az nCore Cloudflare belépési ellenőrzését megkerülnie.</span></div></div>`;
+      return `<div class="ncoreSetupV236"><div><strong>nCore passkey szükséges</strong><span>Add meg Render Environmentben az <code>NCORE_PASSKEY</code> értéket. A HomeHub először a közvetlen nCore RSS feedet használja, és csak utána próbál külső finder fallbacket.</span></div></div>`;
     }
     return `<form class="ncoreSearchFormV236">
       <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés az nCore-on…" minlength="2" required></label>
@@ -55,14 +59,23 @@
     const el = document.createElement('section');
     el.className = 'panel ncorePanelV236';
     const st = stateInfo();
-    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>RSS-alapú keresés és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
+    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Passkey-alapú RSS keresés és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
     return el;
   }
 
   function resultsMarkup(items, diagnostics) {
     if (!items?.length) {
-      const debug = diagnostics ? `<small class="ncoreDiagV237">RSS kategóriák: ${Number(diagnostics.categoriesOk || 0)}/${Number(diagnostics.categoriesTried || 0)} · RSS elemek: ${Number(diagnostics.rssItems || 0)}</small>` : '';
-      return `<div class="ncoreEmptyV236">Nincs találat. Próbálj rövidebb vagy másik keresőkifejezést.${debug}</div>`;
+      let debug = '';
+      if (diagnostics) {
+        const bits = [];
+        if (diagnostics.directRssItems !== undefined) bits.push(`nCore RSS elemek: ${Number(diagnostics.directRssItems || 0)}`);
+        if (diagnostics.directRssError) bits.push(`nCore RSS: ${errorText(diagnostics.directRssError)}`);
+        if (diagnostics.categoriesTried !== undefined) bits.push(`finder: ${Number(diagnostics.categoriesOk || 0)}/${Number(diagnostics.categoriesTried || 0)} kategória`);
+        if (diagnostics.rssItems !== undefined) bits.push(`finder elemek: ${Number(diagnostics.rssItems || 0)}`);
+        if (Array.isArray(diagnostics.finderErrors) && diagnostics.finderErrors.length) bits.push(`finder hiba: ${errorText(diagnostics.finderErrors[0])}`);
+        debug = `<small class="ncoreDiagV237">${bits.map(esc).join(' · ')}</small>`;
+      }
+      return `<div class="ncoreEmptyV236">Nincs találat. A közvetlen nCore RSS csak a feedben lévő friss tételek között tud keresni; ha nincs ott a cím, a finder fallback próbálkozik.${debug}</div>`;
     }
     return items.map(item => {
       const meta = [
