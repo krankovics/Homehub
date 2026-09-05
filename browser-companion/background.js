@@ -17,8 +17,8 @@ function sendToNcore(command) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'HOMEHUB_NCORE_PING') {
-    chrome.tabs.query({ url: 'https://ncore.pro/*' }, (tabs) => {
-      sendResponse({ ok: true, ready: tabs.some((t) => Number.isInteger(t.id)), version: VERSION });
+    sendToNcore({ action: 'ping', payload: {} }).then((response) => {
+      sendResponse({ ok: true, ready: Boolean(response?.ok), version: VERSION, error: response?.error || '' });
     });
     return true;
   }
