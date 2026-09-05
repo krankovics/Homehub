@@ -30,6 +30,12 @@ const HH234 = (() => {
   };
   const normalPlace = (loc) => String(loc?.name || loc?.shortAddress || loc?.address1 || '').trim();
   const isHomePlace = (loc) => /(^|\b)(otthon|home)(\b|$)/i.test(String(loc?.name || '').trim());
+  const cleanNetworkSource = (source) => {
+    const s = String(source || '').trim();
+    if (!s) return 'hálózat';
+    if (/ismeretlen hálózati eszköz/i.test(s)) return 'hálózat';
+    return s;
+  };
   const lifeByPerson = (state) => {
     const out = new Map();
     const life = state?.life360;
@@ -43,33 +49,50 @@ const HH234 = (() => {
   const lifeInfo = (member) => {
     const loc = member?.location || {};
     const battery = num(loc.battery);
-    const speed = num(loc.speed);
+    const rawSpeed = num(loc.speed);
+    const speed = rawSpeed !== null && rawSpeed >= 0 ? rawSpeed : null;
     const driving = truthy(loc.isDriving);
     const transit = truthy(loc.inTransit);
     const charging = truthy(loc.charge);
     const place = normalPlace(loc);
-    const home = isHomePlace(loc);
     const accuracy = num(loc.accuracy);
-    const fresh = ageLabel(loc.timestamp || loc.endTimestamp || loc.since);
+    const stamp = loc.timestamp || loc.endTimestamp || loc.since;
+    const stampMs = tsMs(stamp);
+    const ageMs = stampMs ? Math.max(0, Date.now() - stampMs) : null;
+    const freshEnough = ageMs === null || ageMs <= 15 * 60 * 1000;
+    const moving = driving || transit || (speed !== null && speed > 0);
+    const home = isHomePlace(loc) && !moving;
+    const fresh = ageLabel(stamp);
     let state = 'Helyadat';
     if (driving) state = 'Vezet';
-    else if (home) state = 'Otthon';
     else if (transit || (speed !== null && speed > 0)) state = 'Úton';
+    else if (home) state = 'Otthon';
     else if (place) state = place;
-    return {loc,battery,speed,driving,transit,charging,place,home,accuracy,fresh,state};
+    return {loc,battery,speed,driving,transit,charging,place,home,moving,accuracy,fresh,freshEnough,state};
   };
   const combined = (presence, member) => {
-    if (!member) return {status: presence?.status || 'uncertain', confidence: presence?.confidence ?? 0, source: presence?.source || presence?.note || 'Nincs jelenléti adat'};
+    if (!member) return {status: presence?.status || 'uncertain', confidence: presence?.confidence ?? 0, source: cleanNetworkSource(presence?.source || presence?.note || 'Nincs jelenléti adat')};
     const li = lifeInfo(member);
     const networkHome = presence?.status === 'home';
     const networkAway = presence?.status === 'away';
-    const lifeAway = !li.home && (li.driving || li.transit || Boolean(li.place));
-    if (li.home && networkHome) return {status:'home',confidence:99,source:`Life360 + ${presence?.source || 'hálózat'}`, li};
-    if (li.home) return {status:'home',confidence:96,source:'Life360 · Otthon', li};
-    if (lifeAway && networkAway) return {status:'away',confidence:97,source:`Life360 + hálózat`, li};
-    if (lifeAway && networkHome) return {status:'uncertain',confidence:65,source:'Eltérő jelek · Life360 / hálózat', li};
-    if (lifeAway) return {status:'away',confidence:92,source:`Life360 · ${li.state}`, li};
-    return {status:presence?.status || 'uncertain',confidence:Math.max(presence?.confidence ?? 0,70),source:`Life360${presence?.source ? ` + ${presence.source}` : ''}`,li};
+    const netSource = cleanNetworkSource(presence?.source);
+
+    /* Movement wins over a stale Life360 place label such as "Otthon". */
+    if (li.moving && li.freshEnough) {
+      return {status:'away',confidence:networkHome?93:97,source:networkHome?`Life360 · ${li.state} · hálózat még online`:`Life360 · ${li.state}`,li};
+    }
+    if (li.moving) {
+      return {status:networkHome?'uncertain':'away',confidence:networkHome?62:82,source:`Life360 · ${li.state} · régebbi helyadat`,li};
+    }
+    if (li.home && networkHome) return {status:'home',confidence:99,source:`Life360 + ${netSource}`,li};
+    if (li.home) return {status:'home',confidence:96,source:'Life360 · Otthon',li};
+
+    const knownAwayPlace = Boolean(li.place) && !li.home;
+    if (knownAwayPlace && li.freshEnough && networkAway) return {status:'away',confidence:97,source:'Life360 + hálózat',li};
+    if (knownAwayPlace && li.freshEnough && networkHome) return {status:'uncertain',confidence:70,source:'Eltérő jelek · Life360 / hálózat',li};
+    if (knownAwayPlace && li.freshEnough) return {status:'away',confidence:91,source:`Life360 · ${li.state}`,li};
+
+    return {status:presence?.status || 'uncertain',confidence:presence?.confidence ?? 70,source:presence?.source?`Life360 + ${netSource}`:'Life360',li};
   };
   const statusText = (s) => s === 'home' ? 'Itthon' : s === 'away' ? 'Nincs itthon' : 'Bizonytalan';
 
@@ -81,7 +104,8 @@ const HH234 = (() => {
     if (li.fresh) chips.push(`<span class="lifePillV234"><b>Frissítve</b>${esc(li.fresh)}</span>`);
     if (li.accuracy !== null && li.accuracy >= 0) chips.push(`<span class="lifePillV234"><b>Pontosság</b>${Math.round(li.accuracy)} m</span>`);
     if (li.loc?.wifiState !== undefined && String(li.loc.wifiState) !== '') chips.push(`<span class="lifePillV234"><b>Wi-Fi</b>${truthy(li.loc.wifiState) ? 'kapcsolódva' : 'nincs'}</span>`);
-    return `<div class="life360PersonV234"><div class="life360HeadV234"><strong>${esc(li.place || li.state)}</strong><small>${esc(combinedState.source)}</small></div><div class="life360PillsV234">${chips.join('')}</div></div>`;
+    const headline = li.moving ? li.state : (li.place || li.state);
+    return `<div class="life360PersonV234"><div class="life360HeadV234"><strong>${esc(headline)}</strong><small>${esc(combinedState.source)}</small></div><div class="life360PillsV234">${chips.join('')}</div></div>`;
   }
 
   function enhancePeople(state) {
@@ -161,13 +185,10 @@ const HH234 = (() => {
     document.querySelectorAll('.smartDevice.switch,.smartDevice.light').forEach((card) => {
       const stateBox = card.querySelector('.switchCardStateV12');
       const stateText = stateBox?.querySelector(':scope > span');
-      const actions = card.querySelector('.smartCardActionsV12');
-      const hint = actions?.querySelector('.smartCardHint');
       if (stateText && !stateText.dataset.hh234) {
         stateText.dataset.hh234 = '1';
         stateText.innerHTML = `<small>Kapcsoló</small><strong>${esc(stateText.textContent || '')}</strong>`;
       }
-      if (hint) hint.textContent = card.classList.contains('offline') ? 'Eszköz offline' : 'Kapcsolás a jobb oldali vezérlővel';
     });
   }
 
