@@ -1,0 +1,224 @@
+/* HomeHub 0.24.4 responsive/mobile UX system
+   Global mobile layer based on the approved compact iPhone direction.
+   This file deliberately fixes layout primitives, not individual screenshots. */
+
+:root{
+  --hh-safe-top:env(safe-area-inset-top,0px);
+  --hh-safe-right:env(safe-area-inset-right,0px);
+  --hh-safe-bottom:env(safe-area-inset-bottom,0px);
+  --hh-safe-left:env(safe-area-inset-left,0px);
+  --hh-mobile-nav-h:76px;
+  --hh-mobile-pad:12px;
+}
+
+/* Life360 is injected by homehub-ui-0234.js. Keep its visual language inside the
+   current design system even though the old companion stylesheet is no longer loaded. */
+.hhApp .life360PersonV234{margin:10px 0 0;padding:10px 11px;border:1px solid var(--hh-line);border-radius:13px;background:var(--hh-paper2);display:grid;gap:8px;color:var(--hh-text)}
+.hhApp .life360HeadV234{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.hhApp .life360HeadV234 strong{font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hhApp .life360HeadV234 small{font-size:9px;color:var(--hh-muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.hhApp .life360PillsV234{display:flex;gap:6px;flex-wrap:wrap}
+.hhApp .lifePillV234{display:inline-flex;align-items:center;gap:4px;padding:5px 7px;border:1px solid var(--hh-line);border-radius:999px;background:var(--hh-paper);font-size:9px;line-height:1;color:var(--hh-muted);white-space:nowrap}
+.hhApp .lifePillV234 b{font-size:8px;text-transform:uppercase;letter-spacing:.04em;color:var(--hh-text)}
+.hhApp .lifeStateV234{background:var(--hh-accent-soft);border-color:transparent;color:var(--hh-accent-ink)}
+.hhApp .lifeStateV234 b{color:var(--hh-accent-ink)}
+
+/* The device kind "switch" collides with the legacy form .switch selector.
+   Neutralise the generic form-switch rules inside Smart Life cards globally. */
+.hhApp .smartDevice.switch{display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;gap:10px!important;text-align:left!important}
+.hhApp .smartDevice.switch span:not(.deviceDot){width:auto!important;height:auto!important;min-width:0!important;position:static!important;background:transparent!important;border-radius:0!important}
+.hhApp .smartDevice.switch span:not(.deviceDot)::after{display:none!important;content:none!important}
+.hhApp .smartDevice.switch .deviceDot{width:7px!important;height:7px!important;border-radius:50%!important;position:static!important}
+.hhApp .smartDevice.switch .smartToggleV12{position:relative!important;width:52px!important;min-width:52px!important;height:29px!important;border-radius:999px!important;background:color-mix(in srgb,var(--hh-muted) 32%,var(--hh-paper2))!important;flex:none!important}
+.hhApp .smartDevice.switch .smartToggleV12.on{background:var(--hh-accent)!important}
+
+@media(max-width:760px){
+  html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--hh-bg)!important}
+  html,body,#root{width:100%;max-width:100%;min-height:100%;overflow-x:hidden!important}
+  body{min-width:0!important;overscroll-behavior-y:none}
+
+  /* iOS safe-area: use the safe inset once. The legacy layer applied it both to
+     the app and sticky header, which created a large blank/header overlap area. */
+  html[data-theme] body .hhApp{display:block!important;width:100%!important;max-width:100vw!important;padding-top:0!important;padding-bottom:calc(var(--hh-mobile-nav-h) + var(--hh-safe-bottom) + 24px)!important;overflow-x:hidden!important}
+  html[data-theme] body .hhApp .hhMain{width:100%!important;max-width:100%!important;margin:0!important;padding:calc(var(--hh-safe-top) + 6px) var(--hh-mobile-pad) calc(var(--hh-mobile-nav-h) + var(--hh-safe-bottom) + 22px)!important;overflow-x:hidden!important}
+  html[data-theme] body .hhApp .hhMain>.hhTopbar,
+  html[data-theme] body .hhApp .hhMain>.tabPanel{width:100%!important;max-width:100%!important;margin-left:auto!important;margin-right:auto!important}
+  html[data-theme] body .hhApp .hhTopbar{position:sticky!important;top:var(--hh-safe-top)!important;z-index:70!important;min-height:50px!important;margin:0 calc(var(--hh-mobile-pad) * -1) 10px!important;padding:7px var(--hh-mobile-pad) 9px!important;background:color-mix(in srgb,var(--hh-bg) 95%,transparent)!important;backdrop-filter:blur(20px)!important;border-bottom:1px solid color-mix(in srgb,var(--hh-line) 70%,transparent)!important;align-items:center!important}
+  .hhTopbar h1{font-size:23px!important;line-height:1.05!important;margin:0!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hhEyebrow{display:none!important}
+  .hhTopStatus{display:none!important}
+  .hhTopActions{gap:7px!important;min-width:0!important}
+  .hhMobileTabSelect{display:block!important;width:112px!important;max-width:31vw!important;min-height:38px!important;height:38px!important;padding:0 28px 0 10px!important;border-radius:12px!important;background:var(--hh-paper)!important;border-color:var(--hh-line)!important;font-size:13px!important}
+  .hhTheme{width:38px!important;height:38px!important;min-width:38px!important;border-radius:12px!important;box-shadow:none!important}
+
+  /* iOS form zoom prevention without disabling user zoom. */
+  .hhApp input:not([type="checkbox"]):not([type="radio"]),
+  .hhApp select,
+  .hhApp textarea{font-size:16px!important;line-height:1.35!important}
+  .hhApp textarea{resize:none}
+
+  /* Bottom navigation: compact, floating, and never overlaps modal sheets. */
+  html[data-theme] body .hhApp .hhSidebar{position:fixed!important;display:block!important;left:10px!important;right:10px!important;top:auto!important;bottom:calc(8px + var(--hh-safe-bottom))!important;width:auto!important;max-width:calc(100vw - 20px)!important;height:auto!important;padding:5px!important;border:1px solid var(--hh-line)!important;border-radius:22px!important;background:color-mix(in srgb,var(--hh-paper) 96%,transparent)!important;backdrop-filter:blur(24px)!important;box-shadow:0 16px 42px rgba(20,34,27,.16)!important;z-index:90!important}
+  .hhBrand,.hhSidebarBottom,.hhDesktopNav{display:none!important}
+  .hhMobileNav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:2px!important;width:100%!important}
+  .hhMobileNav button{min-width:0!important;min-height:60px!important;padding:6px 2px 5px!important;border:0!important;border-radius:17px!important;background:transparent!important;color:var(--hh-muted)!important;display:grid!important;place-items:center!important;align-content:center!important;gap:3px!important}
+  .hhMobileNav button>span{font-size:20px!important;line-height:1!important}
+  .hhMobileNav button small{font-size:9px!important;line-height:1!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;max-width:100%!important}
+  .hhMobileNav button.active{background:var(--hh-accent-soft)!important;color:var(--hh-accent)!important}
+  body:has(.modalBack) .hhSidebar,body:has(.actionModalBack) .hhSidebar{display:none!important}
+
+  /* Shared mobile density. */
+  .tabPanel{gap:11px!important}
+  .hhApp .panel{padding:15px!important;border-radius:18px!important}
+  .sectionHead{gap:9px!important;margin-bottom:12px!important}
+  .sectionHead h2,.hhApp .panel h2{font-size:19px!important}
+  .sectionHead p,.hhApp .panel p{font-size:12px!important;line-height:1.45!important}
+  .hhApp :where(.ghost,.primaryAction,.refreshV12,.actionLink,.detailsV12,.powerV12,.vaultPrimaryV18,.profileSaveRowV211 button,.accessSaveRowV211 button,.personActionsV19 button,.credentialActionsV18 a,.credentialActionsV18 button){min-height:42px!important;border-radius:12px!important;font-size:12px!important}
+
+  /* Overview: native dashboard rather than a desktop hero squeezed into 390px. */
+  .hhOverview{gap:11px!important}
+  .hhHomeHero{min-height:0!important;border-radius:20px!important;background:var(--hh-paper)!important;box-shadow:var(--hh-shadow-sm)!important;border:1px solid var(--hh-line)!important;overflow:hidden!important}
+  .hhHeroImage,.hhHeroWash{display:none!important}
+  .hhHeroInner{min-height:0!important;padding:14px!important}
+  .hhHeroTop{min-height:0!important;display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:10px!important}
+  .hhHeroTop h2{font-size:26px!important;margin:0 0 4px!important;color:var(--hh-text)!important}
+  .hhHeroTop p{font-size:11px!important;color:var(--hh-muted)!important;max-width:220px!important}
+  .hhHeroChips{position:static!important;display:flex!important;justify-content:flex-end!important;gap:5px!important;max-width:44%!important}
+  .hhHeroChips span{padding:6px 8px!important;font-size:9px!important;background:var(--hh-paper2)!important;color:var(--hh-text)!important;border:1px solid var(--hh-line)!important;box-shadow:none!important}
+  .hhHeroBottom{margin-top:10px!important;gap:8px!important}
+  .hhStatusStrip{display:none!important}
+  .hhFavoritesTitle{display:none!important}
+  .hhFavorites>div{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;border:1px solid var(--hh-line)!important;border-radius:16px!important;background:var(--hh-paper2)!important;overflow:hidden!important;box-shadow:none!important;backdrop-filter:none!important}
+  .hhFavorites button{min-width:0!important;min-height:58px!important;padding:9px 10px!important;border:0!important;border-right:1px solid var(--hh-line)!important;border-bottom:1px solid var(--hh-line)!important;background:transparent!important}
+  .hhFavorites button:nth-child(2n){border-right:0!important}
+  .hhFavorites button:nth-last-child(-n+2){border-bottom:0!important}
+  .hhFavorites button:last-child{grid-column:1/-1!important;border-right:0!important;border-bottom:0!important}
+  .hhFavorites i{width:29px!important;height:29px!important;background:transparent!important;font-size:17px!important}
+  .hhFavorites b{font-size:12px!important}.hhFavorites small{font-size:9px!important}
+  .presenceStripV19{padding:14px!important}
+  .presenceStripHeadV19{margin-bottom:9px!important}.presenceStripHeadV19 h2{font-size:20px!important}
+  .presenceStripHeadV19 .ghost{min-height:36px!important;padding:0 11px!important}
+  .presencePeopleV19{display:grid!important;grid-template-columns:1fr!important;gap:7px!important;overflow:visible!important;padding:0!important;margin:0!important}
+  .presencePersonV19{width:100%!important;min-width:0!important;max-width:none!important;min-height:66px!important;padding:8px 10px!important;border-radius:14px!important;grid-template-columns:auto minmax(0,1fr) auto!important}
+  .presencePersonV19 .personAvatarV19{width:42px!important;height:42px!important}
+  .presencePersonV19 strong{font-size:13px!important}.presencePersonV19 span{font-size:10px!important}.presencePersonV19 small{font-size:9px!important;max-width:100%!important}
+  .summaryCards{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .summaryCards .summaryButton{min-height:0!important;padding:13px 14px!important;border-radius:16px!important;display:grid!important;grid-template-columns:1fr auto!important;align-items:center!important;gap:3px 10px!important;text-align:left!important}
+  .summaryCards .summaryButton>span{font-size:11px!important;color:var(--hh-blue)!important}.summaryCards .summaryButton>strong{grid-column:1;font-size:19px!important}.summaryCards .summaryButton>small{grid-column:1/-1;font-size:10px!important}
+  .overviewGrid{display:none!important}
+
+  /* People: the mobile list is a person directory first; admin/debug metadata goes into edit. */
+  .peopleHeroV19{padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;min-height:0!important}
+  .peopleHeroV19>div{display:none!important}
+  .peopleHeroV19 .primaryAction{width:100%!important;min-height:44px!important}
+  .peopleGridV19{grid-template-columns:1fr!important;gap:9px!important}
+  .personCardV19{padding:14px!important;border-radius:18px!important}
+  .personHeadV19{gap:11px!important}.personAvatarV19.large{width:58px!important;height:58px!important}.personHeadV19 strong{font-size:18px!important}.personHeadV19 span{font-size:11px!important}.presenceBadgeV19{margin-top:3px!important;padding:5px 8px!important;font-size:9px!important}
+  .personMetaV19{display:none!important}
+  .personDevicesV19{display:none!important}
+  .personNoteV19{display:none!important}
+  .life360PersonV234{margin-top:9px!important;padding:0!important;border:0!important;background:transparent!important;display:block!important}
+  .life360HeadV234{display:none!important}
+  .life360PillsV234{display:flex!important;gap:5px!important;flex-wrap:wrap!important}
+  .life360PillsV234 .lifePillV234:nth-child(n+4){display:none!important}
+  .personActionsV19{margin-top:10px!important;display:block!important}
+  .personActionsV19 .fileGhostV19,.personActionsV19 .deleteBtn{display:none!important}
+  .personActionsV19 .ghost{width:100%!important;background:var(--hh-paper2)!important}
+  .personEditorV19{padding:15px!important}
+  .personFormV19,.contactFieldsV22,.channelPrefsV22,.accessFieldsV21,.deviceAssignV19{grid-template-columns:1fr!important;gap:9px!important}
+  .contactEditorV22,.accessEditorV21{padding:13px!important;border-radius:15px!important;margin-top:12px!important}
+  .permissionGridV21{grid-template-columns:1fr 1fr!important;gap:7px!important}
+  .profileSaveRowV211,.accessSaveRowV211{display:grid!important;grid-template-columns:1fr!important;gap:9px!important;padding:11px!important}
+  .profileSaveRowV211 button,.accessSaveRowV211 button{width:100%!important}
+
+  /* Smart Life: one primary control per card, with detail UI in the device sheet. */
+  .smartHeroV12,.smartSummaryV12{display:none!important}
+  .smartToolbarV12{padding:12px 12px 13px!important;gap:10px!important}
+  .filterBarV12{margin:0!important;padding-bottom:2px!important;gap:5px!important}
+  .filterBarV12 button{min-height:32px!important;padding:0 10px!important;font-size:9px!important}
+  .smartToolsV12,.smartSearchRowV12{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .smartSearchV12{width:100%!important;max-width:none!important;height:42px!important}
+  .smartSearchV12 input{font-size:16px!important}
+  .onlineOnlyV12{display:none!important}
+  .smartGridV12,.smartGridV13{grid-template-columns:1fr!important;padding:0 12px 13px!important;gap:9px!important}
+  .smartDevice{min-height:0!important;padding:13px!important;border-radius:18px!important;gap:8px!important}
+  .smartCardTop{grid-template-columns:38px minmax(0,1fr) auto!important;gap:9px!important;align-items:center!important}
+  .deviceIconV12{width:38px!important;height:38px!important;border-radius:12px!important}.smartCardTitle strong{font-size:15px!important}.smartCardIdentity>small{font-size:9px!important}.smartCardTop .deviceKind{font-size:8px!important;padding:5px 7px!important}
+  .smartCardActionsV12{margin-top:5px!important;padding-top:0!important;min-height:0!important;display:grid!important;grid-template-columns:1fr!important;gap:6px!important}
+  .detailsV12,.powerV12{min-height:38px!important}
+  .smartCardHint{display:none!important}
+  .rawMetrics{display:none!important}
+
+  /* Smart plugs/lights are a single compact row. */
+  .smartDevice.switch,.smartDevice.light{position:relative!important;padding-right:70px!important;min-height:84px!important}
+  .smartDevice.switch .smartCardTop,.smartDevice.light .smartCardTop{grid-template-columns:38px minmax(0,1fr)!important}
+  .smartDevice.switch .smartCardTop .deviceKind,.smartDevice.light .smartCardTop .deviceKind{display:none!important}
+  .smartDevice.switch .switchCardStateV12,.smartDevice.light .switchCardStateV12{margin:0 0 0 47px!important;padding:0!important;min-height:0!important;border:0!important;background:transparent!important;display:block!important}
+  .smartDevice.switch .switchCardStateV12>span,.smartDevice.light .switchCardStateV12>span{display:inline-flex!important;align-items:center!important;gap:4px!important;padding:4px 7px!important;border-radius:999px!important;background:var(--hh-paper2)!important;color:var(--hh-muted)!important;font-size:9px!important;line-height:1!important}
+  .smartDevice.switch .switchCardStateV12>span small,.smartDevice.light .switchCardStateV12>span small{display:none!important}
+  .smartDevice.switch .switchCardStateV12>span strong,.smartDevice.light .switchCardStateV12>span strong{font-size:9px!important;font-weight:750!important}
+  .smartDevice.switch .smartToggleV12,.smartDevice.light .smartToggleV12{position:absolute!important;right:14px!important;top:27px!important;width:48px!important;min-width:48px!important;height:27px!important}
+  .smartDevice.switch .smartToggleV12 i,.smartDevice.light .smartToggleV12 i{width:21px!important;height:21px!important;top:3px!important;left:3px!important}.smartDevice.switch .smartToggleV12.on i,.smartDevice.light .smartToggleV12.on i{left:24px!important}
+  .smartDevice.switch .smartCardActionsV12,.smartDevice.light .smartCardActionsV12{display:none!important}
+
+  /* Gate and climate cards show only the useful summary plus Details. */
+  .smartDevice.gate .gateCardStateV12{margin:5px 0!important;padding:7px 0!important;border:0!important;background:transparent!important;display:flex!important;align-items:baseline!important;gap:7px!important}
+  .smartDevice.gate .gateCardStateV12 span{font-size:9px!important}.smartDevice.gate .gateCardStateV12 strong{font-size:16px!important}
+  .smartDevice.gate .detailsV12{background:transparent!important;border:0!important;border-top:1px solid var(--hh-line)!important;border-radius:0!important;justify-content:space-between!important;padding:7px 0 0!important;color:var(--hh-blue)!important}
+  .climateCardV12{grid-template-columns:auto 1fr!important;gap:8px!important;margin-top:5px!important}.climateTempV12{padding:10px!important;border-radius:13px!important}.climateTempV12 strong{font-size:27px!important}.climateMiniStatsV12{border-radius:13px!important}.climateMiniStatsV12 span{padding:8px!important}.climateMiniStatsV12 b{font-size:11px!important}
+  .sensorHeroV12{margin-top:7px!important;padding-top:8px!important}.sensorHeroV12>div{padding:4px 8px!important}.sensorHeroV12 strong{font-size:15px!important}
+
+  /* AI: chat first, compact composer, no iOS zoom and no giant empty canvas. */
+  .aiHeroV15{display:none!important}
+  .aiModePanelV15{padding:12px!important;gap:9px!important}.aiModePanelV15>div:first-child{display:none!important}.aiModePickerV15{display:flex!important;overflow-x:auto!important;gap:6px!important}.aiModePickerV15 button{flex:0 0 auto!important;min-width:130px!important;padding:9px 10px!important}
+  .aiGridV15{grid-template-columns:1fr!important;gap:10px!important}
+  .aiChatPanelV15,.aiAutomationPanelV15,.aiQuickActionV15{padding:14px!important}
+  .aiSectionHeadV15{margin-bottom:5px!important}.aiStarterV15{margin:8px 0 5px!important;gap:5px!important}.aiStarterV15 button{min-height:31px!important;padding:0 9px!important;font-size:9px!important}
+  .aiMessagesV15{min-height:180px!important;max-height:46vh!important;padding:8px 0!important;gap:8px!important}
+  .aiMessageV15{max-width:92%!important}.aiMessageV15 p{padding:9px 11px!important;border-radius:14px!important;font-size:13px!important;line-height:1.45!important}.aiMessageV15>span{font-size:8px!important}
+  .aiComposerV15{grid-template-columns:1fr!important;gap:7px!important;margin-top:6px!important}
+  .aiComposerV15 textarea{min-height:64px!important;max-height:120px!important;padding:10px 11px!important;border-radius:14px!important;font-size:16px!important}
+  .aiComposerV15 button{width:100%!important;min-height:44px!important}
+  .aiAutomationPanelV15 textarea{min-height:92px!important;max-height:150px!important;font-size:16px!important}
+  .aiSafetyStripV15{padding:9px 10px!important;font-size:9px!important}
+
+  /* Action sheet: compact light templates and safe footer; bottom nav is hidden while open. */
+  .actionModalBack,.modalBack{padding:var(--hh-safe-top) 0 var(--hh-safe-bottom)!important;align-items:flex-end!important;background:rgba(13,20,17,.58)!important;backdrop-filter:blur(9px)!important}
+  .actionComposer,.deviceDetail{width:100%!important;max-width:100%!important;height:auto!important;max-height:calc(100dvh - var(--hh-safe-top) - 8px)!important;margin:0!important;border-radius:26px 26px 0 0!important;background:var(--hh-paper)!important;color:var(--hh-text)!important;overflow:auto!important;overscroll-behavior:contain!important}
+  .actionComposer{padding:16px!important}
+  .actionComposerHead{position:sticky!important;top:0!important;z-index:5!important;padding:2px 0 10px!important;background:var(--hh-paper)!important}.actionComposerHead h2{font-size:27px!important;margin:3px 0!important}.actionComposerHead p{font-size:12px!important}
+  .actionTemplateGrid{display:grid!important;grid-template-columns:1fr!important;gap:7px!important;margin:10px 0!important}
+  .actionTemplateGrid button{min-height:78px!important;padding:11px 12px!important;border:1px solid var(--hh-line)!important;border-radius:15px!important;background:var(--hh-paper2)!important;color:var(--hh-text)!important;display:grid!important;grid-template-columns:34px minmax(0,1fr) auto!important;grid-template-rows:auto auto!important;align-items:center!important;gap:1px 9px!important;text-align:left!important}
+  .actionTemplateGrid button i{grid-row:1/3!important;width:34px!important;height:34px!important;border-radius:11px!important;display:grid!important;place-items:center!important;background:var(--hh-blue-soft)!important;color:var(--hh-blue)!important;font-size:17px!important}.actionTemplateGrid button strong{font-size:13px!important}.actionTemplateGrid button small{font-size:9px!important;color:var(--hh-muted)!important;line-height:1.35!important}.actionTemplateGrid button::after{content:'›';grid-column:3;grid-row:1/3;color:var(--hh-blue);font-size:21px;font-weight:700}.actionTemplateGrid button.active{border-color:color-mix(in srgb,var(--hh-accent) 48%,var(--hh-line))!important;background:var(--hh-accent-soft)!important}
+  .actionFields{padding:12px!important;border-radius:15px!important;grid-template-columns:1fr!important;gap:8px!important}.actionFields label>select,.actionFields label>input{font-size:16px!important}
+  .actionComposerFooter{position:sticky!important;bottom:0!important;z-index:5!important;margin:12px -16px -16px!important;padding:10px 16px calc(10px + var(--hh-safe-bottom))!important;background:color-mix(in srgb,var(--hh-paper) 96%,transparent)!important;backdrop-filter:blur(16px)!important;border-top:1px solid var(--hh-line)!important}.actionComposerFooter button{min-height:44px!important;flex:1!important}
+
+  /* Device sheets. Keep the app-like hierarchy but reduce oversized controls. */
+  .deviceDetail .detailHead{position:sticky!important;top:0!important;z-index:8!important;padding:15px!important;background:color-mix(in srgb,var(--hh-paper) 97%,transparent)!important}.detailHead h2{font-size:25px!important}.detailHead p{font-size:11px!important}.closeBtn,.detailClose{width:40px!important;height:40px!important;min-width:40px!important;border-radius:13px!important}
+  .deviceDetail>.gateHero,.deviceDetail>.gateActionGrid,.deviceDetail>.gateStatusGrid,.deviceDetail>.detailInfoGrid,.deviceDetail>.safetyNote,.deviceDetail>.chargerHero,.deviceDetail>.chargerActions,.deviceDetail>.climateHero,.deviceDetail>.climatePrimary,.deviceDetail>.climateControls,.deviceDetail>.detailSubhead{margin-left:13px!important;margin-right:13px!important}
+  .gateHero{margin-top:12px!important;padding:13px!important;border-radius:17px!important;background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;color:var(--hh-text)!important}.gateGlyph{width:86px!important;height:56px!important;border-radius:14px!important}.gateHero strong{color:var(--hh-text)!important}.gateHero span{color:var(--hh-muted)!important}
+  .gateActionGrid{grid-template-columns:1fr 1fr!important;gap:8px!important}.gateActionGrid button{min-height:82px!important;padding:10px!important;border-radius:16px!important;background:#122431!important;border-color:#1d3a4d!important;color:#f3f7f5!important;grid-template-columns:34px minmax(0,1fr)!important;gap:5px 8px!important}.gateActionGrid button>span{width:34px!important;height:34px!important;border-radius:50%!important;font-size:15px!important}.gateActionGrid button small{display:none!important}.gateActionGrid button.on{background:#13382e!important}
+  .gateStatusGrid{grid-template-columns:1fr!important;gap:8px!important;margin-top:10px!important}.gateStatusGrid>div{padding:12px!important;border-radius:14px!important}.gateStatusGrid strong{font-size:20px!important}
+  .detailInfoGrid,.detailInfoGrid.compact{grid-template-columns:1fr 1fr!important;gap:7px!important}.detailInfoGrid>div{padding:10px!important;border-radius:13px!important}.detailInfoGrid strong{font-size:13px!important}
+  .climateHero{grid-template-columns:1fr 1fr!important;gap:7px!important}.climateHero>div:first-child{grid-column:1/-1!important}.climateHero>div{min-height:72px!important;padding:11px!important;border-radius:15px!important}.climateControls{grid-template-columns:1fr!important}.detailSelect,.toggleAction{min-height:52px!important}
+  .vacuumStageV13{margin:12px 13px 0!important;min-height:300px!important;border-radius:18px!important}.vacuumStageStatsV13{margin:10px!important}.vacuumControlGridV13{grid-template-columns:1fr 1fr!important;margin:10px 13px!important;gap:8px!important}.vacuumControlGridV13 button{min-height:72px!important;border-radius:15px!important}
+
+  /* Timeline/network/settings/credentials keep content but remove desktop padding. */
+  .timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.mediaHeroV16{padding:14px!important}
+  .homeTimelineV19 article{padding:10px 0!important;gap:9px!important}.homeTimelineV19 strong{font-size:12px!important}.homeTimelineV19 time{font-size:9px!important}
+  .switchMonitor{padding:12px!important}.switchPortGrid{grid-template-columns:1fr 1fr!important;gap:7px!important}.switchPort{padding:9px!important}.switchPort strong{font-size:15px!important}
+  .credentialGridV18{grid-template-columns:1fr!important;gap:8px!important}.credentialCardV18{padding:13px!important}.credentialFieldsV18{gap:6px!important}.credentialActionsV18{gap:6px!important}.credentialActionsV18 a,.credentialActionsV18 button{flex:1!important}
+  .systemInfo{grid-template-columns:1fr!important;gap:8px!important}.systemInfo>div{padding:12px!important}
+
+  /* Toasts and banners stay below the island/header. */
+  .toast{top:calc(var(--hh-safe-top) + 58px)!important;left:12px!important;right:12px!important;width:auto!important;max-width:none!important;font-size:12px!important;border-radius:14px!important}
+}
+
+@media(max-width:430px){
+  :root{--hh-mobile-pad:10px;--hh-mobile-nav-h:72px}
+  .hhMobileTabSelect{width:104px!important;max-width:30vw!important}
+  .hhHeroTop{display:grid!important;grid-template-columns:1fr!important}.hhHeroChips{max-width:100%!important;justify-content:flex-start!important}
+  .permissionGridV21{grid-template-columns:1fr!important}
+  .gateActionGrid{grid-template-columns:1fr 1fr!important}.gateActionGrid button{min-height:78px!important;font-size:12px!important}
+  .detailInfoGrid,.detailInfoGrid.compact{grid-template-columns:1fr!important}
+}
