@@ -23,6 +23,7 @@ const initialState: State = {
   historySampleKey: "",
   deviceIdentityOverrides: {},
   tuyaLogCursor: {},
+  externalSignals: {},
   persistentUpdatedAt: null
 };
 
@@ -53,6 +54,7 @@ export class Store {
           historySampleKey: typeof disk.historySampleKey === "string" ? disk.historySampleKey : "",
           deviceIdentityOverrides: disk.deviceIdentityOverrides || {},
           tuyaLogCursor: disk.tuyaLogCursor || {},
+          externalSignals: disk.externalSignals || {},
           persistentUpdatedAt: disk.persistentUpdatedAt || null
         };
       } catch {
@@ -92,7 +94,8 @@ export class Store {
       presenceRuntime: structuredClone(this.state.presenceRuntime),
       historySampleKey: this.state.historySampleKey,
       deviceIdentityOverrides: structuredClone(this.state.deviceIdentityOverrides),
-      tuyaLogCursor: structuredClone(this.state.tuyaLogCursor)
+      tuyaLogCursor: structuredClone(this.state.tuyaLogCursor),
+      externalSignals: structuredClone(this.state.externalSignals)
     };
   }
 
@@ -114,6 +117,7 @@ export class Store {
     this.state.historySampleKey = backup.historySampleKey || "";
     this.state.deviceIdentityOverrides = backup.deviceIdentityOverrides || {};
     this.state.tuyaLogCursor = backup.tuyaLogCursor || {};
+    this.state.externalSignals = backup.externalSignals || {};
     this.state.persistentUpdatedAt = backup.persistentUpdatedAt;
     this.save();
     return true;

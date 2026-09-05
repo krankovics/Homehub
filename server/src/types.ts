@@ -148,11 +148,34 @@ export type PersonDeviceLink = {
   label?: string;
 };
 
+export type NotificationChannel = "push" | "email" | "sms";
+export type NotificationPriority = "info" | "normal" | "warning" | "critical";
+
+export type PushSubscriptionRecord = {
+  id: string;
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+  userAgent?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PersonNotificationPrefs = {
+  pushEnabled: boolean;
+  emailEnabled: boolean;
+  smsEnabled: boolean;
+};
+
 export type PersonProfile = {
   id: string;
   name: string;
   nickname?: string;
   role?: string;
+  email?: string;
+  phone?: string;
+  notificationPrefs?: PersonNotificationPrefs;
+  pushSubscriptions?: PushSubscriptionRecord[];
   avatarMime?: string;
   avatarBase64?: string;
   auth?: PersonAuth;
@@ -257,13 +280,32 @@ export type CopyRecord = {
   updatedAt: string;
 };
 
+export type ExternalSignalValue = string | number | boolean;
+
+export type ExternalSignalRecord = {
+  key: string;
+  label?: string;
+  category?: "geofence" | "ble" | "generic";
+  value: ExternalSignalValue;
+  source?: string;
+  personId?: string;
+  updatedAt: string;
+  expiresAt?: string;
+};
+
 export type AutomationTrigger =
   | { type: "tuya.numeric"; deviceId: string; code: string; operator: "gt" | "gte" | "lt" | "lte" | "eq"; value: number; forSeconds?: number }
   | { type: "tuya.state"; deviceId: string; code: string; operator: "eq" | "neq"; value: string | number | boolean; forSeconds?: number }
   | { type: "network.online_window"; networkId: string; after: string; before: string; forSeconds?: number; timezone?: string }
+  | { type: "network.online"; networkId: string; forSeconds?: number }
   | { type: "network.offline"; networkId: string; forSeconds?: number }
   | { type: "network.link_below"; networkId: string; port: number; mbps: number; forSeconds?: number }
   | { type: "network.new_device" }
+  | { type: "presence.person_state"; personId: string; state: "home" | "away" | "uncertain"; forSeconds?: number }
+  | { type: "presence.device_mismatch"; personId: string; forSeconds?: number }
+  | { type: "signal.state"; key: string; operator: "eq" | "neq"; value: ExternalSignalValue; forSeconds?: number; maxAgeSeconds?: number }
+  | { type: "signal.numeric"; key: string; operator: "gt" | "gte" | "lt" | "lte" | "eq"; value: number; forSeconds?: number; maxAgeSeconds?: number }
+  | { type: "all"; conditions: AutomationTrigger[]; forSeconds?: number }
   | { type: "schedule"; time: string; days: number[]; timezone?: string };
 
 export type AutomationAction =
@@ -271,6 +313,20 @@ export type AutomationAction =
   | { type: "vacuum.command"; action: "start" | "pause" | "stop" | "dock" }
   | { type: "ai.summary"; subject: string; email?: boolean }
   | { type: "alert"; subject: string; message: string; email?: boolean };
+
+export type AutomationEscalation = {
+  afterSeconds: number;
+  channels: NotificationChannel[];
+};
+
+export type AutomationNotificationPlan = {
+  enabled: boolean;
+  priority: NotificationPriority;
+  recipientPersonIds: string[];
+  channels: NotificationChannel[];
+  fallbackToAdmin?: boolean;
+  escalations?: AutomationEscalation[];
+};
 
 export type AutomationRule = {
   id: string;
@@ -280,6 +336,10 @@ export type AutomationRule = {
   actions: AutomationAction[];
   cooldownSeconds: number;
   notifyEmail?: boolean;
+  notification?: AutomationNotificationPlan;
+  safety?: {
+    allowGateAction?: boolean;
+  };
   createdAt: string;
   updatedAt: string;
   lastTriggeredAt?: string;
@@ -288,8 +348,20 @@ export type AutomationRule = {
 export type AutomationRuntime = {
   conditionSince?: string;
   latched?: boolean;
+  triggeredAt?: string;
+  escalationsSent?: number[];
   lastScheduleKey?: string;
   lastSeenValue?: string;
+};
+
+export type NotificationDelivery = {
+  personId?: string;
+  personName?: string;
+  channel: NotificationChannel;
+  target?: string;
+  ok: boolean;
+  skipped?: boolean;
+  error?: string;
 };
 
 export type AlertRecord = {
@@ -299,9 +371,12 @@ export type AlertRecord = {
   subject: string;
   message: string;
   createdAt: string;
+  priority?: NotificationPriority;
   emailRequested: boolean;
   emailSent: boolean;
   emailError?: string;
+  deliveries?: NotificationDelivery[];
+  escalationLevel?: number;
   readAt?: string;
 };
 
@@ -322,6 +397,7 @@ export type PersistentBackup = {
   historySampleKey?: string;
   deviceIdentityOverrides?: Record<string, DeviceIdentityOverride>;
   tuyaLogCursor?: Record<string, number>;
+  externalSignals?: Record<string, ExternalSignalRecord>;
 };
 
 export type State = {
@@ -341,5 +417,6 @@ export type State = {
   historySampleKey: string;
   deviceIdentityOverrides: Record<string, DeviceIdentityOverride>;
   tuyaLogCursor: Record<string, number>;
+  externalSignals: Record<string, ExternalSignalRecord>;
   persistentUpdatedAt: string | null;
 };

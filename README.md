@@ -1,4 +1,6 @@
-# HomeHub v0.20.1
+# HomeHub v0.21.1
 
 Otthoni vezérlőközpont a jelenlegi setuphoz: Shuttle OMNINAS KD20 + WD My Cloud + Technicolor/TP-Link hálózat + Smart Life/Tuya + USB nyomtató.
+
+## 
 

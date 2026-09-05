@@ -102,14 +102,17 @@ export class Mailer {
     };
   }
   configured() {
-    return Boolean(this.cfg.host && this.cfg.port && this.cfg.fromAddress && this.cfg.to.length && (!this.cfg.user || this.cfg.pass));
+    return Boolean(this.cfg.host && this.cfg.port && this.cfg.fromAddress && (!this.cfg.user || this.cfg.pass));
   }
   recipientsCount() { return this.cfg.to.length; }
-  async send(subject: string, text: string) {
+  defaultRecipients() { return [...this.cfg.to]; }
+  async send(subject: string, text: string, recipients?: string[]) {
     if (!this.configured()) throw new Error("email_not_configured");
+    const to = (recipients?.length ? recipients : this.cfg.to).map(x => x.trim()).filter(Boolean);
+    if (!to.length) throw new Error("email_recipient_missing");
     const socket: SocketLike = this.cfg.secure
       ? tls.connect({ host: this.cfg.host, port: this.cfg.port, servername: this.cfg.host, rejectUnauthorized: true })
       : net.createConnection({ host: this.cfg.host, port: this.cfg.port });
-    await smtpSession(socket, this.cfg, { to: this.cfg.to, subject, text });
+    await smtpSession(socket, this.cfg, { to, subject, text });
   }
 }

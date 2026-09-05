@@ -241,6 +241,7 @@ export class AIService {
     }));
     const people = state.people.map(p => ({ id: p.id, name: p.name, nickname: p.nickname, role: p.role, devices: p.devices }));
     const presence = Object.values(state.presenceRuntime).map(p => ({ personId: p.personId, name: p.name, status: p.status, confidence: p.confidence, since: p.since, lastSeenAt: p.lastSeenAt, source: p.source, networkId: p.networkId, note: p.note }));
+    const signals = Object.values(state.externalSignals).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100).map(s => ({ key: s.key, label: s.label, category: s.category, value: s.value, source: s.source, personId: s.personId, updatedAt: s.updatedAt, expiresAt: s.expiresAt }));
     return {
       now: new Date().toISOString(),
       timezone: "Europe/Budapest",
@@ -249,12 +250,13 @@ export class AIService {
       network,
       people,
       presence,
+      signals,
       recentHistory,
       historyWindowHours: 72,
       networkEvents: state.networkEvents.slice(-30).map(e => ({ type: e.type, deviceName: e.deviceName, message: e.message, createdAt: e.createdAt })),
       vacuum,
       automations: state.automations.map(r => ({ id: r.id, name: r.name, enabled: r.enabled, trigger: r.trigger, actions: r.actions, lastTriggeredAt: r.lastTriggeredAt })),
-      alerts: state.alerts.slice(-30).map(a => ({ subject: a.subject, message: a.message, createdAt: a.createdAt, emailSent: a.emailSent }))
+      alerts: state.alerts.slice(-30).map(a => ({ subject: a.subject, message: a.message, createdAt: a.createdAt, priority: a.priority, deliveries: (a.deliveries || []).map(d => ({ personName: d.personName, channel: d.channel, ok: d.ok, skipped: d.skipped, error: d.error })) }))
     };
   }
 
@@ -263,7 +265,7 @@ export class AIService {
     const data = await this.responses({
       max_output_tokens: 1200,
       input: [
-        { role: "system", content: [{ type: "input_text", text: "Te vagy a HomeHub AI Asszisztens. Magyarul, tömören és tényszerűen válaszolj. Kizárólag a kapott HomeHub állapotból és recentHistory eseményekből állíts tényt a házról. A people/presence mezőből válaszolj arra, ki van itthon. A recentHistory alapján válaszolj a ma, tegnap, éjjel, mikor, mennyi ideig jellegű kérdésekre; az eseményidőket Europe/Budapest szerint értelmezd. Ha a kért időszak kívül esik a historyWindowHours ablakon vagy nincs elég esemény, ezt egyértelműen mondd ki. Ne találj ki eszközállapotot. A kapu nyitása/zárása, telepítő DP-k, valamint EV töltő áramlimit módosítása magas kockázatú és AI-ból nem hajtható végre. A felhasználó kérésére javasolhatsz automatizálást, de az AI önállóan nem aktivál szabályt vagy eszközt. Időzóna: Europe/Budapest." }] },
+        { role: "system", content: [{ type: "input_text", text: "Te vagy a HomeHub AI Asszisztens. Magyarul, tömören és tényszerűen válaszolj. Kizárólag a kapott HomeHub állapotból és recentHistory eseményekből állíts tényt a házról. A people/presence mezőből válaszolj arra, ki van itthon; a signals mező friss geofence/BLE/ESP32 állapotokat is tartalmazhat. A recentHistory alapján válaszolj a ma, tegnap, éjjel, mikor, mennyi ideig jellegű kérdésekre; az eseményidőket Europe/Budapest szerint értelmezd. Ha a kért időszak kívül esik a historyWindowHours ablakon vagy nincs elég esemény, ezt egyértelműen mondd ki. Ne találj ki eszközállapotot. A kapu nyitása/zárása, telepítő DP-k, valamint EV töltő áramlimit módosítása magas kockázatú és AI-ból nem hajtható végre. A felhasználó kérésére javasolhatsz automatizálást, de az AI önállóan nem aktivál szabályt vagy eszközt. Időzóna: Europe/Budapest." }] },
         { role: "user", content: [{ type: "input_text", text: `HomeHub állapot:\n${JSON.stringify(context)}\n\nKérdés:\n${message}` }] }
       ]
     });

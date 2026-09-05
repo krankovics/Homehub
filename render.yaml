@@ -10,6 +10,8 @@ services:
         sync: false
       - key: BRIDGE_TOKEN
         sync: false
+      - key: SIGNAL_TOKEN
+        sync: false
       - key: COOKIE_SECRET
         generateValue: true
       - key: DATA_FILE
@@ -45,4 +47,17 @@ services:
       - key: SMTP_FROM_NAME
         value: HomeHub
       - key: ALERT_EMAIL_TO
+        sync: false
+
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
         sync: false

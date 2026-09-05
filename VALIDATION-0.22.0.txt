@@ -1,0 +1,62 @@
+HomeHub v0.22.0 validation
+===========================
+
+Scope
+-----
+- person-based Push / Email / SMS notification routing
+- recipient selection and escalation
+- presence.device_mismatch trigger
+- generic Tuya sensor/status automation
+- authenticated external geofence / BLE / ESP32 signals
+- optional arrival/departure gate automation templates
+- gate safety opt-in + disabled-by-default creation + UI confirmation
+- AI context enriched with external signals and notification delivery results
+- WD Bridge unchanged
+
+Checks performed
+----------------
+1. TypeScript 5.8.3 transpile/parser validation passed for all 12 TS/TSX source files.
+2. web/public/sw.js passed `node --check`.
+3. JSON parsing passed for all 8 JSON files in the release tree.
+4. render.yaml parsed successfully with PyYAML.
+5. CSS brace balance passed: styles.css 1753 opening / 1753 closing braces.
+6. Go Bridge test suite passed with `go test ./...`.
+7. Bridge tree is byte-for-byte unchanged versus the v0.22 pre-extension source baseline.
+8. Version markers verified:
+   - root package: 0.22.0
+   - server package: 0.22.0
+   - web package: 0.22.0
+   - server VERSION: 0.22.0
+   - PWA cache: homehub-v0.22.0
+9. Static feature assertions passed for:
+   - SIGNAL_TOKEN and authenticated integration endpoint
+   - persistent externalSignals state
+   - per-person notification preferences and recipientPersonIds
+   - VAPID/Web Push support
+   - Twilio SMS support
+   - presence.device_mismatch
+   - generic sensor template with Tuya scale-aware displayed values
+   - arrival/departure gate templates
+   - server-side explicit gate safety opt-in
+   - Timeline notification delivery logging
+   - AI external signal context
+10. Arrival and departure gate templates are created with enabled=false. The frontend asks for an explicit safety checkbox before creation, confirmation before enabling, and confirmation before manual test execution.
+11. The server independently rejects gate-like automation commands unless safety.allowGateAction=true. The execution engine performs the same check again before issuing a Tuya command.
+12. Notification Router skips, and logs as skipped, channels that are not configured or not enabled for the person; stale Web Push subscriptions receiving HTTP 404/410 are removed automatically.
+13. Person phone numbers accept readable international formatting such as +36 30 123 4567 and are normalized to E.164-style +36301234567.
+14. Contact privacy: raw email/phone and push endpoint data are not returned to ordinary non-admin users; only availability/count metadata is exposed.
+15. Generic numeric Tuya sensor values use DP scale metadata consistently between the UI and automation engine. Numeric `!=` is intentionally not offered because the numeric trigger schema supports gt/gte/lt/lte/eq.
+
+Type/build limitation
+---------------------
+The environment used to assemble this package has no installed npm workspace dependencies and npm registry installation timed out, therefore a complete dependency-aware `npm run build` could not be executed locally.
+
+A dependency-less TypeScript diagnostic pass was also run. The only remaining web diagnostics outside missing imports/JSX contextual types are React `key` pseudo-prop messages caused specifically by the absence of @types/react. No new server-local diagnostics remained after excluding missing Node/external type declarations and the resulting contextual-any/unref artifacts.
+
+The Render Docker build performs the final real dependency-aware TypeScript + Vite build because Dockerfile runs `npm install` followed by `npm run build`.
+
+Deployment expectations
+-----------------------
+- GET /api/health -> {"ok":true,"version":"0.22.0"}
+- WD bridge remains: homehub-bridge 0.20.0 linux/arm
+- no WD Bridge update is required

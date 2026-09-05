@@ -6,20 +6,22 @@ import express from "express";
 import multer from "multer";
 import { z } from "zod";
 import { Store } from "./store.js";
-import type { AutomationRule, Command, PersistentBackup, Snapshot, PersonProfile, DeviceIdentityOverride, MenuPermission } from "./types.js";
+import type { AutomationRule, AutomationTrigger, Command, PersistentBackup, Snapshot, PersonProfile, DeviceIdentityOverride, MenuPermission } from "./types.js";
 import { TuyaService, type TuyaDevice, type TuyaReportLog } from "./tuya.js";
 import { Mailer } from "./mailer.js";
 import { AutomationEngine } from "./automations.js";
+import { NotificationRouter } from "./notifier.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 
-const VERSION = "0.21.0";
+const VERSION = "0.22.1";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
 const COOKIE_SECRET = process.env.COOKIE_SECRET || (isProd ? "" : "dev-cookie-secret-change-me");
 const BRIDGE_TOKEN = process.env.BRIDGE_TOKEN || (isProd ? "" : "dev-token");
+const SIGNAL_TOKEN = process.env.SIGNAL_TOKEN || BRIDGE_TOKEN;
 const DATA_FILE = process.env.DATA_FILE || "./data/state.json";
 const WEB_DIST = path.resolve(process.env.WEB_DIST || "../web/dist");
 const SESSION_COOKIE = "homehub_session";
@@ -43,6 +45,7 @@ const app = express();
 app.set("trust proxy", 1);
 const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 const store = new Store(DATA_FILE);
+const notifier = new NotificationRouter(store, mailer);
 const ai = new AIService(store, tuya);
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
@@ -125,7 +128,7 @@ function requiredPermission(req: express.Request): MenuPermission | null {
   if (path.startsWith("/api/torrents") || path.startsWith("/api/copies")) return "downloads";
   if (path.startsWith("/api/media")) return "media";
   if (path.startsWith("/api/smart-home") || path.startsWith("/api/vacuum")) return "smart";
-  if (path.startsWith("/api/automations") || path.startsWith("/api/alerts")) return "actions";
+  if (path.startsWith("/api/automations") || path.startsWith("/api/alerts") || path.startsWith("/api/signals")) return "actions";
   if (path.startsWith("/api/ai")) return "ai";
   if (path.startsWith("/api/network")) return "network";
   if (path.startsWith("/api/settings")) return "settings";
@@ -146,8 +149,19 @@ function adminOnly(req: express.Request, res: express.Response, next: express.Ne
   res.locals.user = user;
   next();
 }
-function publicPerson(p: PersonProfile) {
-  return { ...p, avatarBase64: undefined, auth: p.auth ? { enabled: p.auth.enabled, loginName: p.auth.loginName, permissions: p.auth.permissions, forcePasswordChange: Boolean(p.auth.forcePasswordChange), hasPassword: Boolean(p.auth.passwordHash) } : undefined, hasAvatar: Boolean(p.avatarBase64) };
+function publicPerson(p: PersonProfile, revealContact = false) {
+  return {
+    ...p,
+    email: revealContact ? p.email : undefined,
+    phone: revealContact ? p.phone : undefined,
+    hasEmail: Boolean(p.email),
+    hasPhone: Boolean(p.phone),
+    avatarBase64: undefined,
+    pushSubscriptions: undefined,
+    pushSubscriptionCount: p.pushSubscriptions?.length || 0,
+    auth: p.auth ? { enabled: p.auth.enabled, loginName: p.auth.loginName, permissions: p.auth.permissions, forcePasswordChange: Boolean(p.auth.forcePasswordChange), hasPassword: Boolean(p.auth.passwordHash) } : undefined,
+    hasAvatar: Boolean(p.avatarBase64)
+  };
 }
 
 function bridgeAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -155,6 +169,11 @@ function bridgeAuth(req: express.Request, res: express.Response, next: express.N
   if (!auth || !safeEqual(auth, `Bearer ${BRIDGE_TOKEN}`)) {
     return res.status(401).json({ error: "unauthorized" });
   }
+  next();
+}
+function signalAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const auth = req.header("authorization");
+  if (!SIGNAL_TOKEN || !auth || !safeEqual(auth, `Bearer ${SIGNAL_TOKEN}`)) return res.status(401).json({ error: "unauthorized" });
   next();
 }
 
@@ -173,7 +192,7 @@ function enqueue(bridgeId: string, type: Command["type"], payload: Record<string
   return cmd;
 }
 
-const automationEngine = new AutomationEngine(store, tuya, mailer, (action) => {
+const automationEngine = new AutomationEngine(store, tuya, mailer, notifier, (action) => {
   const current = store.get();
   const bridgeId = current.snapshot?.bridgeId;
   const vacuum = current.snapshot?.vacuum;
@@ -272,7 +291,7 @@ function deriveNetworkEvents(previous: Snapshot["network"] = [], next: Snapshot[
   return events;
 }
 
-function publicState() {
+function publicState(user?: SessionUser) {
   const s = store.get();
   const lastSeen = s.bridgeLastSeenAt ? new Date(s.bridgeLastSeenAt).getTime() : 0;
   const enrichedNetwork = enrichNetworkIdentities(s.snapshot?.network || [], tuya.state().devices || [], s.deviceIdentityOverrides);
@@ -288,8 +307,9 @@ function publicState() {
     settings: s.settings,
     copies: s.copies,
     networkEvents: s.networkEvents.slice(-50).reverse(),
-    people: s.people.map(publicPerson),
+    people: s.people.map(p => publicPerson(p, Boolean(user?.isAdmin))),
     presence: Object.values(s.presenceRuntime),
+    signals: Object.values(s.externalSignals).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100),
     timeline: s.history.slice(-150).reverse(),
     recentCommands: s.commands.slice(-10).reverse().map((c) => ({
       id: c.id,
@@ -304,7 +324,8 @@ function publicState() {
       rules: s.automations,
       alerts: s.alerts.slice(-50).reverse(),
       unread: s.alerts.filter(a => !a.readAt).length,
-      email: automationEngine.emailStatus()
+      email: automationEngine.emailStatus(),
+      notification: automationEngine.notificationStatus()
     },
     ai: ai.status()
   };
@@ -346,7 +367,46 @@ app.post("/api/auth/logout", userAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/state", userAuth, (_req, res) => res.json(publicState()));
+const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url().max(3000),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({ p256dh: z.string().min(20).max(1000), auth: z.string().min(8).max(500) })
+});
+app.get("/api/notifications/status", userAuth, (_req, res) => {
+  const user = res.locals.user as SessionUser;
+  const person = user.personId ? store.get().people.find(p => p.id === user.personId) : undefined;
+  res.json({ ...notifier.status(), vapidPublicKey: notifier.publicVapidKey(), currentPersonPushSubscriptions: person?.pushSubscriptions?.length || 0 });
+});
+app.get("/api/notifications/push/public-key", userAuth, (_req, res) => {
+  const key = notifier.publicVapidKey();
+  if (!key) return res.status(503).json({ error: "push_not_configured" });
+  res.json({ publicKey: key });
+});
+app.post("/api/notifications/push/subscribe", userAuth, (req, res) => {
+  const user = res.locals.user as SessionUser;
+  if (!user.personId) return res.status(400).json({ error: "person_account_required_for_push" });
+  const parsed = pushSubscriptionSchema.safeParse(req.body || {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const now = new Date().toISOString();
+  store.mutate(s => {
+    const p = s.people.find(x => x.id === user.personId); if (!p) return;
+    const current = p.pushSubscriptions || [];
+    const existing = current.find(x => x.endpoint === parsed.data.endpoint);
+    if (existing) { existing.keys = parsed.data.keys; existing.expirationTime = parsed.data.expirationTime ?? null; existing.updatedAt = now; existing.userAgent = req.header("user-agent") || existing.userAgent; }
+    else current.push({ id: crypto.randomUUID(), endpoint: parsed.data.endpoint, expirationTime: parsed.data.expirationTime ?? null, keys: parsed.data.keys, userAgent: req.header("user-agent") || "", createdAt: now, updatedAt: now });
+    p.pushSubscriptions = current.slice(-10); p.updatedAt = now;
+  });
+  res.json({ ok: true });
+});
+app.delete("/api/notifications/push/subscribe", userAuth, (req, res) => {
+  const user = res.locals.user as SessionUser;
+  if (!user.personId) return res.status(400).json({ error: "person_account_required_for_push" });
+  const endpoint = String(req.body?.endpoint || "");
+  store.mutate(s => { const p = s.people.find(x => x.id === user.personId); if (p) { p.pushSubscriptions = (p.pushSubscriptions || []).filter(x => x.endpoint !== endpoint); p.updatedAt = new Date().toISOString(); } });
+  res.json({ ok: true });
+});
+
+app.get("/api/state", userAuth, (_req, res) => res.json(publicState(res.locals.user as SessionUser)));
 app.get("/api/media", userAuth, (_req, res) => {
   const media = store.get().snapshot?.media;
   if (!media) return res.status(503).json({ error: "media_not_available" });
@@ -357,6 +417,13 @@ const personInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
   nickname: z.string().trim().max(80).optional().default(""),
   role: z.string().trim().max(80).optional().default("Családtag"),
+  email: z.union([z.literal(""), z.string().email().max(180)]).optional().default(""),
+  phone: z.string().trim().max(40).optional().default("").transform(v => v.replace(/[\s().-]/g, "")).refine(v => v === "" || /^\+[1-9]\d{7,14}$/.test(v), "A telefonszám nemzetközi formátumú legyen, például +36 30 123 4567."),
+  notificationPrefs: z.object({
+    pushEnabled: z.boolean().default(true),
+    emailEnabled: z.boolean().default(true),
+    smsEnabled: z.boolean().default(false)
+  }).optional().default({ pushEnabled: true, emailEnabled: true, smsEnabled: false }),
   devices: z.array(z.object({
     networkId: z.string().min(1).max(160),
     role: z.enum(["primary", "secondary", "stationary"]),
@@ -366,7 +433,8 @@ const personInputSchema = z.object({
 
 app.get("/api/people", userAuth, (_req, res) => {
   const s = store.get();
-  res.json({ people: s.people.map(publicPerson), presence: Object.values(s.presenceRuntime) });
+  const user = res.locals.user as SessionUser;
+  res.json({ people: s.people.map(p => publicPerson(p, user.isAdmin)), presence: Object.values(s.presenceRuntime) });
 });
 app.post("/api/people", adminOnly, (req, res) => {
   const parsed = personInputSchema.safeParse(req.body || {});
@@ -378,7 +446,7 @@ app.post("/api/people", adminOnly, (req, res) => {
     updatePresence(s, s.snapshot?.network || []);
     pushHistory(s, { category: "system", type: "people.created", entityId: person.id, entityName: person.name, message: `${person.name} profilja létrejött.`, createdAt: now });
   });
-  res.status(201).json(publicPerson(person));
+  res.status(201).json(publicPerson(person, true));
 });
 app.put("/api/people/:id", adminOnly, (req, res) => {
   const parsed = personInputSchema.safeParse(req.body || {});
@@ -393,7 +461,7 @@ app.put("/api/people/:id", adminOnly, (req, res) => {
     updatePresence(s, s.snapshot?.network || []);
   });
   if (!updated) return res.status(404).json({ error: "person_not_found" });
-  res.json(publicPerson(updated));
+  res.json(publicPerson(updated, true));
 });
 const personAccessSchema = z.object({
   enabled: z.boolean().default(false),
@@ -425,7 +493,7 @@ app.put("/api/people/:id/access", adminOnly, (req, res) => {
   });
   if (missingPassword) return res.status(400).json({ error: "password_required_for_first_enable" });
   if (!updated) return res.status(404).json({ error: "person_not_found" });
-  res.json(publicPerson(updated));
+  res.json(publicPerson(updated, true));
 });
 
 app.delete("/api/people/:id", adminOnly, (req, res) => {
@@ -514,15 +582,54 @@ app.post("/api/vacuum/command", userAuth, (req, res) => {
 });
 
 
-const automationTriggerSchema = z.discriminatedUnion("type", [
+const signalInputSchema = z.object({
+  value: z.union([z.string().max(500), z.number(), z.boolean()]),
+  label: z.string().trim().max(120).optional(),
+  category: z.enum(["geofence","ble","generic"]).optional().default("generic"),
+  source: z.string().trim().max(120).optional(),
+  personId: z.string().trim().max(160).optional(),
+  ttlSeconds: z.number().int().min(0).max(604800).optional().default(0)
+});
+function saveExternalSignal(keyRaw: string, input: z.infer<typeof signalInputSchema>, sessionUser?: SessionUser) {
+  const key = keyRaw.trim().toLowerCase().replace(/[^a-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160);
+  if (!key) throw new Error("invalid_signal_key");
+  const now = new Date(), personId = sessionUser?.personId || input.personId || undefined;
+  const record = { key, label: input.label || key, category: input.category, value: input.value, source: input.source || (sessionUser ? `user:${sessionUser.id}` : "integration"), personId, updatedAt: now.toISOString(), expiresAt: input.ttlSeconds ? new Date(now.getTime() + input.ttlSeconds * 1000).toISOString() : undefined };
+  store.mutate(s => {
+    s.externalSignals[key] = record;
+    const person = personId ? s.people.find(p => p.id === personId) : undefined;
+    pushHistory(s, { category: input.category === "geofence" || input.category === "ble" ? "presence" : "system", type: `signal.${input.category}`, entityId: key, entityName: record.label, message: `${record.label}: ${String(record.value)}${person ? ` · ${person.name}` : ""}`, createdAt: record.updatedAt, data: { key, value: record.value, category: record.category, source: record.source, personId } });
+  });
+  automationEngine.tick().catch(() => {});
+  return record;
+}
+app.get("/api/signals", userAuth, (_req, res) => res.json(Object.values(store.get().externalSignals).sort((a,b) => b.updatedAt.localeCompare(a.updatedAt))));
+app.post("/api/signals/:key", userAuth, (req, res) => {
+  const parsed = signalInputSchema.safeParse(req.body || {}); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try { res.json(saveExternalSignal(paramString(req.params.key), parsed.data, res.locals.user as SessionUser)); } catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+app.post("/api/integrations/signals/:key", signalAuth, (req, res) => {
+  const parsed = signalInputSchema.safeParse(req.body || {}); if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try { res.json(saveExternalSignal(paramString(req.params.key), parsed.data)); } catch (err) { res.status(400).json({ error: err instanceof Error ? err.message : String(err) }); }
+});
+
+
+const automationTriggerSchema: z.ZodTypeAny = z.lazy(() => z.discriminatedUnion("type", [
   z.object({ type: z.literal("tuya.numeric"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["gt","gte","lt","lte","eq"]), value: z.number(), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("tuya.state"), deviceId: z.string().min(1), code: z.string().min(1), operator: z.enum(["eq","neq"]), value: z.union([z.string(),z.number(),z.boolean()]), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("network.online_window"), networkId: z.string().min(1), after: z.string().regex(/^\d{2}:\d{2}$/), before: z.string().regex(/^\d{2}:\d{2}$/), forSeconds: z.number().int().min(0).max(86400).optional().default(0), timezone: z.string().optional().default("Europe/Budapest") }),
+  z.object({ type: z.literal("network.online"), networkId: z.string().min(1), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("network.offline"), networkId: z.string().min(1), forSeconds: z.number().int().min(0).max(86400).optional().default(300) }),
   z.object({ type: z.literal("network.link_below"), networkId: z.string().min(1), port: z.number().int().min(1).max(64), mbps: z.number().int().min(1).max(100000), forSeconds: z.number().int().min(0).max(86400).optional().default(120) }),
   z.object({ type: z.literal("network.new_device") }),
+  z.object({ type: z.literal("presence.person_state"), personId: z.string().min(1), state: z.enum(["home","away","uncertain"]), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
+  z.object({ type: z.literal("presence.device_mismatch"), personId: z.string().min(1), forSeconds: z.number().int().min(0).max(86400).optional().default(300) }),
+  z.object({ type: z.literal("signal.state"), key: z.string().trim().min(1).max(160), operator: z.enum(["eq","neq"]), value: z.union([z.string(),z.number(),z.boolean()]), forSeconds: z.number().int().min(0).max(86400).optional().default(0), maxAgeSeconds: z.number().int().min(0).max(604800).optional().default(0) }),
+  z.object({ type: z.literal("signal.numeric"), key: z.string().trim().min(1).max(160), operator: z.enum(["gt","gte","lt","lte","eq"]), value: z.number(), forSeconds: z.number().int().min(0).max(86400).optional().default(0), maxAgeSeconds: z.number().int().min(0).max(604800).optional().default(0) }),
+  z.object({ type: z.literal("all"), conditions: z.array(automationTriggerSchema).min(2).max(6), forSeconds: z.number().int().min(0).max(86400).optional().default(0) }),
   z.object({ type: z.literal("schedule"), time: z.string().regex(/^\d{2}:\d{2}$/), days: z.array(z.number().int().min(0).max(6)).min(1).max(7), timezone: z.string().optional().default("Europe/Budapest") })
-]);
+]));
+
 const automationActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("tuya.command"),
@@ -534,24 +641,35 @@ const automationActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ai.summary"), subject: z.string().min(1).max(180), email: z.boolean().optional().default(true) }),
   z.object({ type: z.literal("alert"), subject: z.string().min(1).max(180), message: z.string().min(1).max(4000), email: z.boolean().optional().default(true) })
 ]);
+const notificationChannelSchema = z.enum(["push","email","sms"]);
+const automationNotificationSchema = z.object({
+  enabled: z.boolean().default(true),
+  priority: z.enum(["info","normal","warning","critical"]).default("warning"),
+  recipientPersonIds: z.array(z.string().min(1)).max(20).default([]),
+  channels: z.array(notificationChannelSchema).max(3).default(["push"]),
+  fallbackToAdmin: z.boolean().optional().default(false),
+  escalations: z.array(z.object({ afterSeconds: z.number().int().min(60).max(86400), channels: z.array(notificationChannelSchema).min(1).max(3) })).max(4).optional().default([])
+}).optional();
 const automationRuleInputSchema = z.object({
   name: z.string().trim().min(2).max(120), enabled: z.boolean().default(true), trigger: automationTriggerSchema,
   actions: z.array(automationActionSchema).min(1).max(6), cooldownSeconds: z.number().int().min(0).max(604800).default(300),
-  notifyEmail: z.boolean().optional().default(true)
+  notifyEmail: z.boolean().optional().default(true),
+  notification: automationNotificationSchema,
+  safety: z.object({ allowGateAction: z.boolean().optional().default(false) }).optional()
 });
 
-type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds" | "notifyEmail">;
+type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds" | "notifyEmail" | "notification" | "safety">;
 
 function automationGateSafety(rule: AutomationRuleInput) {
   for (const action of rule.actions) {
     if (action.type !== "tuya.command") continue;
     const d = tuya.state().devices.find(x => x.id === action.deviceId);
-    if (d && (d.profile === "mygate" || /kapu|gate|garage|garázs|door|lock|zár/i.test(`${d.name} ${d.productName}`))) return false;
+    if (d && (d.profile === "mygate" || /kapu|gate|garage|garázs|door|lock|zár/i.test(`${d.name} ${d.productName}`)) && !rule.safety?.allowGateAction) return false;
   }
   return true;
 }
 
-app.get("/api/automations", userAuth, (_req, res) => res.json(publicState().automation));
+app.get("/api/automations", userAuth, (_req, res) => res.json(publicState(res.locals.user as SessionUser).automation));
 app.post("/api/automations", userAuth, (req, res) => {
   const parsed = automationRuleInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -844,7 +962,12 @@ const persistentBackupSchema = z.object({
   presenceRuntime: z.record(z.any()).optional(),
   historySampleKey: z.string().optional(),
   deviceIdentityOverrides: z.record(z.any()).optional(),
-  tuyaLogCursor: z.record(z.number()).optional()
+  tuyaLogCursor: z.record(z.number()).optional(),
+  externalSignals: z.record(z.object({
+    key: z.string(), label: z.string().optional(), category: z.enum(["geofence","ble","generic"]).optional(),
+    value: z.union([z.string(),z.number(),z.boolean()]), source: z.string().optional(), personId: z.string().optional(),
+    updatedAt: z.string(), expiresAt: z.string().optional()
+  })).optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
