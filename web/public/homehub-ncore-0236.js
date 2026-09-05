@@ -4,7 +4,7 @@
   let status = null;
   let statusRefreshBusy = false;
 
-  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
   const dateText = (v) => {
     if (!v) return '';
     const d = new Date(v);
@@ -28,7 +28,7 @@
     if (code === 'ncore_bridge_timeout') return 'A WD Bridge nem válaszolt időben az nCore kérésre.';
     if (code === 'ncore_bridge_command_lost') return 'Az nCore kérés elveszett egy Render újraindulás miatt. Indítsd újra a keresést.';
     if (code === 'ncore_session_expired') return 'Az nCore munkamenet lejárt. Frissítsd a WD Vault ncore bejegyzésében a Cookie-t.';
-    if (code === 'ncore_cloudflare') return 'Az nCore Cloudflare ellenőrzést kért a WD Bridge felé. Frissítsd a böngészős nCore sessiont és a Vaultban tárolt Cookie-t.';
+    if (code === 'ncore_cloudflare') return 'Az nCore Cloudflare a WD Bridge HTTP kliensét blokkolja. A Cookie frissítése ezen nem segít; ha van passkey, a HomeHub automatikusan a friss RSS-re vált.';
     if (code === 'ncore_passkey_missing') return 'Az RSS tartalékhoz nincs NCORE_PASSKEY beállítva.';
     if (code === 'ncore_rss_cloudflare') return 'Az nCore RSS tartalékot Cloudflare blokkolta a Render felől.';
     if (code === 'ncore_rss_invalid_response') return 'Az nCore RSS tartalék most nem adott értelmezhető választ.';
@@ -42,6 +42,8 @@
 
   function stateInfo() {
     if (!status?.enabled) return {ok:false, label:'nCore kikapcsolva'};
+    if (status?.bridgeSearchBlocked && status?.fallbackRss) return {ok:false, label:'WD Bridge blokkolva · RSS tartalék'};
+    if (status?.bridgeSearchBlocked) return {ok:false, label:'WD Bridge · Cloudflare blokkolva'};
     if (status?.bridgeOnline && status?.bridgeConfigured) {
       const version = status?.bridgeVersion ? ` ${status.bridgeVersion}` : '';
       return {ok:true, label:`WD Bridge${version} · nCore kész`};
@@ -55,22 +57,30 @@
     if (!status?.enabled) {
       return `<div class="ncoreSetupV236"><div><strong>nCore integráció kikapcsolva</strong><span>Render Environmentben az <code>NCORE_ENABLED=true</code> kapcsolja be.</span></div></div>`;
     }
+    const blocked = Boolean(status?.bridgeSearchBlocked);
+    const placeholder = blocked ? 'Keresés a friss nCore RSS-ben…' : 'Keresés a teljes nCore katalógusban…';
+    const helper = blocked
+      ? 'A teljes katalógus HTML keresését Cloudflare blokkolja a WD Bridge felől. A HomeHub most automatikusan a passkey-alapú friss RSS-t használja.'
+      : 'A teljes keresést a WD HomeHub Bridge végzi az otthoni kapcsolaton.';
     return `<form class="ncoreSearchFormV236">
-      <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés a teljes nCore katalógusban…" minlength="2" required></label>
+      <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="${esc(placeholder)}" minlength="2" required></label>
       <select name="category" aria-label="Kategória">
         <option value="all">Minden</option>
         <option value="movies">Film</option>
         <option value="tv">Sorozat</option>
       </select>
       <button type="submit">Keresés</button>
-    </form><div class="ncoreResultsV236"><div class="ncoreEmptyV236">A teljes keresést a WD HomeHub Bridge végzi az otthoni kapcsolaton.</div></div>`;
+    </form><div class="ncoreResultsV236"><div class="ncoreEmptyV236">${esc(helper)}</div></div>`;
   }
 
   function panel() {
     const el = document.createElement('section');
     el.className = 'panel ncorePanelV236';
     const st = stateInfo();
-    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Teljes katalógus keresése a WD Bridge-en, majd közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
+    const desc = status?.bridgeSearchBlocked
+      ? 'A WD Bridge elérhető, de a Cloudflare blokkolja a HTML katalóguskeresést; ilyenkor a HomeHub automatikusan RSS tartalékra vált.'
+      : 'Teljes katalógus keresése a WD Bridge-en, majd közvetlen hozzáadás a KD20 Transmissionhöz.';
+    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>${esc(desc)}</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
     return el;
   }
 
@@ -79,13 +89,16 @@
       let detail = 'Nincs találat.';
       let debug = '';
       if (mode === 'direct-rss-fallback') {
-        detail = 'Nincs találat a friss nCore RSS-ben. A teljes katalógushoz a WD Bridge-nek online és nCore Cookie-val konfiguráltnak kell lennie.';
+        detail = diagnostics?.bridgeError === 'ncore_cloudflare'
+          ? 'Nincs találat a friss nCore RSS-ben. A teljes katalógus keresését Cloudflare blokkolja a WD Bridge felől.'
+          : 'Nincs találat a friss nCore RSS-ben. A teljes katalógushoz a WD Bridge-nek online és nCore Cookie-val konfiguráltnak kell lennie.';
       }
       if (diagnostics) {
         const bits = [];
         if (diagnostics.directRssItems !== undefined) bits.push(`nCore RSS elemek: ${Number(diagnostics.directRssItems || 0)}`);
         if (diagnostics.bridgeOnline !== undefined) bits.push(`WD Bridge: ${diagnostics.bridgeOnline ? 'online' : 'offline'}`);
         if (diagnostics.bridgeConfigured !== undefined) bits.push(`nCore Vault: ${diagnostics.bridgeConfigured ? 'kész' : 'nincs Cookie'}`);
+        if (diagnostics.bridgeError === 'ncore_cloudflare') bits.push('teljes keresés: Cloudflare blokkolta');
         debug = `<small class="ncoreDiagV237">${bits.map(esc).join(' · ')}</small>`;
       }
       return `<div class="ncoreEmptyV236">${esc(detail)}${debug}</div>`;
@@ -134,7 +147,7 @@
       if (q.length < 2) return;
       submit.disabled = true;
       submit.textContent = 'Keresés…';
-      out.innerHTML = '<div class="ncoreEmptyV236">Keresés folyamatban a WD Bridge-en…</div>';
+      out.innerHTML = `<div class="ncoreEmptyV236">${status?.bridgeSearchBlocked ? 'Keresés a friss nCore RSS-ben…' : 'Keresés folyamatban a WD Bridge-en…'}</div>`;
       try {
         const data = await json(`/api/ncore/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
         out.innerHTML = resultsMarkup(data.results || [], data.diagnostics, data.mode);
@@ -142,6 +155,7 @@
           const button = article.querySelector('button');
           if (button) button.addEventListener('click', () => addToKd20(article, button));
         });
+        if (data.mode === 'direct-rss-fallback') refreshExisting(el);
       } catch (err) {
         out.innerHTML = `<div class="ncoreErrorV236">${esc(errorText(err instanceof Error ? err.message : String(err)))}</div>`;
       } finally {
