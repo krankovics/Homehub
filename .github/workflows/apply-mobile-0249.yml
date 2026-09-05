@@ -1,0 +1,41 @@
+name: Apply HomeHub 0.24.9 mobile UX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mobile-0249.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply 0.24.9 patch
+        run: python scripts/apply-mobile-0249.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate web and server build
+        run: npm run build
+
+      - name: Commit application changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web server scripts/apply-mobile-0249.py
+          git commit -m 'HomeHub 0.24.9: notifications hub + global mobile UX'
+          git push
