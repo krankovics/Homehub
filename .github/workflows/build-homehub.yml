@@ -1,0 +1,64 @@
+name: Build HomeHub
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install app dependencies
+        run: npm install
+
+      - name: Build web and server
+        run: npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: bridge/go.mod
+          cache-dependency-path: bridge/go.mod
+
+      - name: Test bridge
+        working-directory: bridge
+        run: go test ./...
+
+      - name: Build WD My Cloud ARMv7 bridge
+        working-directory: bridge
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: arm
+          GOARM: '7'
+        run: go build -trimpath -ldflags='-s -w' -o ../homehub-bridge-linux-armv7 ./cmd/homehub-bridge
+
+      - name: Build Linux AMD64 bridge
+        working-directory: bridge
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: go build -trimpath -ldflags='-s -w' -o ../homehub-bridge-linux-amd64 ./cmd/homehub-bridge
+
+      - name: Upload bridge binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: homehub-bridge-0.24.0
+          path: |
+            homehub-bridge-linux-armv7
+            homehub-bridge-linux-amd64
+          if-no-files-found: error
+          retention-days: 30
