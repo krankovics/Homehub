@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "HomeHub nCore Companion",
+  "version": "0.1.0",
+  "description": "A HomeHub teljes nCore keresését a saját bejelentkezett Chrome/Edge munkameneteden keresztül végzi.",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": [
+    "https://ncore.pro/*",
+    "https://homehub-2riv.onrender.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://ncore.pro/*"],
+      "js": ["ncore-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://homehub-2riv.onrender.com/*"],
+      "js": ["homehub-content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HomeHub nCore Companion"
+  }
+}
