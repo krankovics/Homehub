@@ -2,12 +2,13 @@
   let mounted = false;
   let mounting = false;
   let status = null;
+  let statusRefreshBusy = false;
 
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dateText = (v) => {
     if (!v) return '';
     const d = new Date(v);
-    if (!Number.isFinite(d.getTime())) return '';
+    if (!Number.isFinite(d.getTime())) return String(v);
     return d.toLocaleString('hu-HU', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   };
 
@@ -21,61 +22,73 @@
   }
 
   function errorText(code) {
-    if (code === 'ncore_passkey_missing') return 'Az nCore passkey nincs beállítva. Add meg Renderben az NCORE_PASSKEY változót.';
-    if (code === 'ncore_passkey_invalid') return 'Az nCore elutasította a passkey-t. Ellenőrizd az NCORE_PASSKEY értékét.';
-    if (code === 'ncore_rss_cloudflare') return 'Az nCore közvetlen RSS feedjét Cloudflare blokkolta a Render felől.';
-    if (code === 'ncore_rss_invalid_response') return 'Az nCore RSS feed most nem adott értelmezhető választ.';
-    if (/^ncore_rss_http_/.test(code || '')) return `Az nCore RSS feed nem elérhető (${String(code).replace('ncore_rss_http_','HTTP ')}).`;
-    if (code === 'ncore_finder_invalid_response') return 'A külső RSS kereső most nem adott értelmezhető választ.';
-    if (/^ncore_finder_http_/.test(code || '')) return `A külső RSS kereső nem elérhető (${String(code).replace('ncore_finder_http_','HTTP ')}).`;
-    if (code === 'ncore_download_cloudflare') return 'A keresés működik, de a .torrent letöltését az nCore Cloudflare blokkolta a Render felől.';
+    if (code === 'ncore_disabled') return 'Az nCore integráció nincs bekapcsolva.';
+    if (code === 'ncore_bridge_offline') return 'A WD HomeHub Bridge most nem érhető el. A teljes nCore keresés a helyi bridge-en fut.';
+    if (code === 'ncore_bridge_credentials_missing') return 'A WD Credentials Vaultban még nincs ncore hozzáférés. Hozz létre egy ncore bejegyzést, és a Jelszó mezőbe mentsd a böngészőből kimásolt teljes nCore Cookie értéket.';
+    if (code === 'ncore_bridge_timeout') return 'A WD Bridge nem válaszolt időben az nCore kérésre.';
+    if (code === 'ncore_bridge_command_lost') return 'Az nCore kérés elveszett egy Render újraindulás miatt. Indítsd újra a keresést.';
+    if (code === 'ncore_session_expired') return 'Az nCore munkamenet lejárt. Frissítsd a WD Vault ncore bejegyzésében a Cookie-t.';
+    if (code === 'ncore_cloudflare') return 'Az nCore Cloudflare ellenőrzést kért a WD Bridge felé. Frissítsd a böngészős nCore sessiont és a Vaultban tárolt Cookie-t.';
+    if (code === 'ncore_passkey_missing') return 'Az RSS tartalékhoz nincs NCORE_PASSKEY beállítva.';
+    if (code === 'ncore_rss_cloudflare') return 'Az nCore RSS tartalékot Cloudflare blokkolta a Render felől.';
+    if (code === 'ncore_rss_invalid_response') return 'Az nCore RSS tartalék most nem adott értelmezhető választ.';
+    if (/^ncore_rss_http_/.test(code || '')) return `Az nCore RSS nem elérhető (${String(code).replace('ncore_rss_http_','HTTP ')}).`;
+    if (code === 'ncore_download_cloudflare') return 'A régi Render-alapú torrent letöltést Cloudflare blokkolta. Használd a WD Bridge módot.';
     if (code === 'ncore_invalid_torrent_file') return 'Az nCore nem érvényes .torrent fájlt adott vissza.';
+    if (/^kd20_add_failed/.test(code || '')) return `A torrent letöltődött, de a KD20 nem fogadta el: ${String(code).replace(/^kd20_add_failed:\s*/, '')}`;
+    if (/^ncore_http_/.test(code || '')) return `Az nCore kapcsolat hibázott: ${code}`;
     return code || 'Ismeretlen nCore hiba.';
   }
 
   function stateInfo() {
-    if (!status?.configured) return {ok:false, label:'Passkey szükséges'};
-    if (status?.rssOnline === true) return {ok:true, label:`Passkey kész · nCore RSS online${Number(status?.rssItems||0) ? ` (${Number(status.rssItems)})` : ''}`};
-    if (status?.finderOnline === true) return {ok:true, label:'Passkey kész · finder online'};
-    return {ok:false, label:'Passkey kész · RSS offline'};
+    if (!status?.enabled) return {ok:false, label:'nCore kikapcsolva'};
+    if (status?.bridgeOnline && status?.bridgeConfigured) {
+      const version = status?.bridgeVersion ? ` ${status.bridgeVersion}` : '';
+      return {ok:true, label:`WD Bridge${version} · nCore kész`};
+    }
+    if (status?.bridgeOnline && !status?.bridgeConfigured) return {ok:false, label:'WD Bridge online · nCore Cookie kell'};
+    if (status?.fallbackRss) return {ok:false, label:'WD Bridge offline · RSS tartalék'};
+    return {ok:false, label:'WD Bridge offline'};
   }
 
   function setupMarkup() {
-    if (!status?.configured) {
-      return `<div class="ncoreSetupV236"><div><strong>nCore passkey szükséges</strong><span>Add meg Render Environmentben az <code>NCORE_PASSKEY</code> értéket. A HomeHub először a közvetlen nCore RSS feedet használja, és csak utána próbál külső finder fallbacket.</span></div></div>`;
+    if (!status?.enabled) {
+      return `<div class="ncoreSetupV236"><div><strong>nCore integráció kikapcsolva</strong><span>Render Environmentben az <code>NCORE_ENABLED=true</code> kapcsolja be.</span></div></div>`;
     }
     return `<form class="ncoreSearchFormV236">
-      <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés az nCore-on…" minlength="2" required></label>
+      <label class="ncoreSearchInputV236"><span>⌕</span><input name="q" autocomplete="off" placeholder="Keresés a teljes nCore katalógusban…" minlength="2" required></label>
       <select name="category" aria-label="Kategória">
         <option value="all">Minden</option>
         <option value="movies">Film</option>
         <option value="tv">Sorozat</option>
       </select>
       <button type="submit">Keresés</button>
-    </form><div class="ncoreResultsV236"><div class="ncoreEmptyV236">Írj be legalább 2 karaktert.</div></div>`;
+    </form><div class="ncoreResultsV236"><div class="ncoreEmptyV236">A teljes keresést a WD HomeHub Bridge végzi az otthoni kapcsolaton.</div></div>`;
   }
 
   function panel() {
     const el = document.createElement('section');
     el.className = 'panel ncorePanelV236';
     const st = stateInfo();
-    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Passkey-alapú RSS keresés és közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
+    el.innerHTML = `<div class="ncoreHeadV236"><div><span class="smartEyebrowV12">TORRENT KERESŐ</span><h2>nCore keresés</h2><p>Teljes katalógus keresése a WD Bridge-en, majd közvetlen hozzáadás a KD20 Transmissionhöz.</p></div><span class="ncoreStateV236 ${st.ok?'ok':''}">${esc(st.label)}</span></div>${setupMarkup()}`;
     return el;
   }
 
-  function resultsMarkup(items, diagnostics) {
+  function resultsMarkup(items, diagnostics, mode) {
     if (!items?.length) {
+      let detail = 'Nincs találat.';
       let debug = '';
+      if (mode === 'direct-rss-fallback') {
+        detail = 'Nincs találat a friss nCore RSS-ben. A teljes katalógushoz a WD Bridge-nek online és nCore Cookie-val konfiguráltnak kell lennie.';
+      }
       if (diagnostics) {
         const bits = [];
         if (diagnostics.directRssItems !== undefined) bits.push(`nCore RSS elemek: ${Number(diagnostics.directRssItems || 0)}`);
-        if (diagnostics.directRssError) bits.push(`nCore RSS: ${errorText(diagnostics.directRssError)}`);
-        if (diagnostics.categoriesTried !== undefined) bits.push(`finder: ${Number(diagnostics.categoriesOk || 0)}/${Number(diagnostics.categoriesTried || 0)} kategória`);
-        if (diagnostics.rssItems !== undefined) bits.push(`finder elemek: ${Number(diagnostics.rssItems || 0)}`);
-        if (Array.isArray(diagnostics.finderErrors) && diagnostics.finderErrors.length) bits.push(`finder hiba: ${errorText(diagnostics.finderErrors[0])}`);
+        if (diagnostics.bridgeOnline !== undefined) bits.push(`WD Bridge: ${diagnostics.bridgeOnline ? 'online' : 'offline'}`);
+        if (diagnostics.bridgeConfigured !== undefined) bits.push(`nCore Vault: ${diagnostics.bridgeConfigured ? 'kész' : 'nincs Cookie'}`);
         debug = `<small class="ncoreDiagV237">${bits.map(esc).join(' · ')}</small>`;
       }
-      return `<div class="ncoreEmptyV236">Nincs találat. A közvetlen nCore RSS csak a feedben lévő friss tételek között tud keresni; ha nincs ott a cím, a finder fallback próbálkozik.${debug}</div>`;
+      return `<div class="ncoreEmptyV236">${esc(detail)}${debug}</div>`;
     }
     return items.map(item => {
       const meta = [
@@ -94,34 +107,18 @@
 
   async function addToKd20(article, button) {
     const id = article.dataset.id;
-    const title = article.dataset.title || `ncore-${id}`;
     const original = button.textContent;
     button.disabled = true;
-    button.textContent = 'Letöltés…';
+    button.textContent = 'Küldés…';
     try {
-      const r = await fetch(`/api/ncore/torrent/${encodeURIComponent(id)}?name=${encodeURIComponent(title)}`, {credentials:'same-origin', cache:'no-store'});
-      if (!r.ok) {
-        let message = `HTTP ${r.status}`;
-        try { const j = await r.json(); message = errorText(j.error || message); } catch {}
-        throw new Error(message);
-      }
-      const blob = await r.blob();
-      const fd = new FormData();
-      fd.append('torrent', new File([blob], `${title.replace(/[\\/:*?"<>|]+/g,'_').slice(0,150)}.torrent`, {type:'application/x-bittorrent'}));
-      button.textContent = 'Küldés…';
-      const upload = await fetch('/api/torrents/file', {method:'POST', body:fd, credentials:'same-origin'});
-      if (!upload.ok) {
-        let message = `HTTP ${upload.status}`;
-        try { const j = await upload.json(); message = j.error || message; } catch {}
-        throw new Error(message);
-      }
+      await json(`/api/ncore/add/${encodeURIComponent(id)}`, {method:'POST'});
       button.textContent = 'Hozzáadva';
       article.classList.add('added');
-      setTimeout(() => window.dispatchEvent(new Event('focus')), 500);
+      setTimeout(() => window.dispatchEvent(new Event('focus')), 600);
     } catch (err) {
       button.disabled = false;
       button.textContent = original;
-      alert(`nCore hiba: ${err instanceof Error ? err.message : String(err)}`);
+      alert(`nCore hiba: ${errorText(err instanceof Error ? err.message : String(err))}`);
     }
   }
 
@@ -137,10 +134,10 @@
       if (q.length < 2) return;
       submit.disabled = true;
       submit.textContent = 'Keresés…';
-      out.innerHTML = '<div class="ncoreEmptyV236">Keresés folyamatban…</div>';
+      out.innerHTML = '<div class="ncoreEmptyV236">Keresés folyamatban a WD Bridge-en…</div>';
       try {
         const data = await json(`/api/ncore/search?q=${encodeURIComponent(q)}&category=${encodeURIComponent(category)}`);
-        out.innerHTML = resultsMarkup(data.results || [], data.diagnostics);
+        out.innerHTML = resultsMarkup(data.results || [], data.diagnostics, data.mode);
         out.querySelectorAll('.ncoreResultV236').forEach(article => {
           const button = article.querySelector('button');
           if (button) button.addEventListener('click', () => addToKd20(article, button));
@@ -162,11 +159,30 @@
     return keep;
   }
 
+  async function refreshExisting(el) {
+    if (statusRefreshBusy) return;
+    statusRefreshBusy = true;
+    try {
+      status = await json('/api/ncore/status');
+      const st = stateInfo();
+      const badge = el.querySelector('.ncoreStateV236');
+      if (badge) {
+        badge.textContent = st.label;
+        badge.classList.toggle('ok', st.ok);
+      }
+    } catch {}
+    finally { statusRefreshBusy = false; }
+  }
+
   async function ensure() {
     const downloads = document.querySelector('.torrentList')?.closest('.tabPanel');
     if (!downloads) { mounted = false; return; }
     const existing = dedupe(downloads);
-    if (existing) { mounted = true; return; }
+    if (existing) {
+      mounted = true;
+      refreshExisting(existing);
+      return;
+    }
     if (mounting) return;
     mounting = true;
     try {
@@ -180,7 +196,7 @@
       bind(el);
       mounted = true;
     } catch {
-      status = {configured:false};
+      status = {enabled:false,configured:false};
       const currentDownloads = document.querySelector('.torrentList')?.closest('.tabPanel');
       if (currentDownloads && !dedupe(currentDownloads)) {
         const el = panel();
