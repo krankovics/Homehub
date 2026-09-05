@@ -20,4 +20,4 @@ COPY --from=build /app/server/connectors /app/server/connectors
 COPY --from=build /app/web/dist /app/web/dist
 ENV PORT=8787 WEB_DIST=/app/web/dist DATA_FILE=/tmp/homehub/state.json
 EXPOSE 8787
-CMD ["node","server/dist/index.js"]
+CMD ["node","--import","./server/dist/ncore-preload.js","server/dist/index.js"]
