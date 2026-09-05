@@ -1,0 +1,283 @@
+/* HomeHub 0.24.3 global UX/UI design system
+   Centralized visual normalization for every HomeHub surface.
+   Loaded after legacy/module CSS so new work should extend these tokens/components,
+   not add page-local theme patches. */
+
+:root{
+  --hh-bg:#eef2ef;
+  --hh-paper:#ffffff;
+  --hh-paper2:#f6f8f7;
+  --hh-paper3:#edf2ef;
+  --hh-text:#161b19;
+  --hh-muted:#707a75;
+  --hh-faint:#9aa39f;
+  --hh-line:rgba(18,28,23,.09);
+  --hh-line-strong:rgba(18,28,23,.15);
+  --hh-accent:#18b892;
+  --hh-accent-hover:#0fa681;
+  --hh-accent-soft:#ddf7ef;
+  --hh-accent-ink:#086e59;
+  --hh-blue:#2f7ea5;
+  --hh-blue-soft:#e7f3f8;
+  --hh-warn:#8a6414;
+  --hh-warn-soft:#fff5d9;
+  --hh-danger:#b44c59;
+  --hh-danger-soft:#fae9ec;
+  --hh-success:#168766;
+  --hh-success-soft:#e1f6ee;
+  --hh-control:#fff;
+  --hh-control-hover:#f7faf8;
+  --hh-shadow-sm:0 8px 22px rgba(28,42,35,.055);
+  --hh-shadow:0 18px 48px rgba(28,42,35,.08);
+  --hh-radius-xs:9px;
+  --hh-radius-sm:12px;
+  --hh-radius:18px;
+  --hh-radius-lg:22px;
+  --hh-space-1:6px;
+  --hh-space-2:10px;
+  --hh-space-3:14px;
+  --hh-space-4:18px;
+  --hh-space-5:24px;
+  --hh-space-6:32px;
+  --hh-control-h:42px;
+  --hh-page-max:2080px;
+}
+html[data-theme="dark"]{
+  --hh-bg:#09100d;
+  --hh-paper:#101814;
+  --hh-paper2:#151f1a;
+  --hh-paper3:#1a2721;
+  --hh-text:#f2f6f4;
+  --hh-muted:#9aa8a1;
+  --hh-faint:#6f7e77;
+  --hh-line:rgba(255,255,255,.075);
+  --hh-line-strong:rgba(255,255,255,.13);
+  --hh-accent:#38d7b5;
+  --hh-accent-hover:#47e3c1;
+  --hh-accent-soft:#173d34;
+  --hh-accent-ink:#9bf0d7;
+  --hh-blue:#83caed;
+  --hh-blue-soft:#163142;
+  --hh-warn:#edcd77;
+  --hh-warn-soft:#352c18;
+  --hh-danger:#f09aa5;
+  --hh-danger-soft:#3b2026;
+  --hh-success:#83e1bd;
+  --hh-success-soft:#173a2e;
+  --hh-control:#111b16;
+  --hh-control-hover:#17241d;
+  --hh-shadow-sm:0 8px 24px rgba(0,0,0,.20);
+  --hh-shadow:0 22px 60px rgba(0,0,0,.30);
+}
+
+/* Base rhythm + typography */
+html[data-theme="light"],html[data-theme="dark"]{font-size:16px;color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark}
+body{background:var(--hh-bg)!important;color:var(--hh-text)!important}
+.hhApp{background:var(--hh-bg)!important;color:var(--hh-text)!important;font-size:14px;line-height:1.45}
+.hhMain{min-width:0!important;padding:24px clamp(18px,2vw,34px) 48px!important;overflow-x:clip!important}
+.hhMain>.hhTopbar,.hhMain>.tabPanel{width:min(100%,var(--hh-page-max));margin-left:auto;margin-right:auto}
+.hhTopbar{min-height:54px;margin-bottom:18px!important}
+.hhTopbar h1{font-size:clamp(27px,1.15vw,34px)!important;line-height:1.08!important;letter-spacing:-.035em!important}
+.hhEyebrow,.smartEyebrowV12,.hhHeroKicker{font-size:10px!important;line-height:1.2;font-weight:900!important;letter-spacing:.16em!important;text-transform:uppercase;color:var(--hh-accent)!important}
+.hhApp h2,.hhApp h3{color:var(--hh-text)}
+.hhApp .panel h2,.hhApp .sectionHead h2{font-size:21px!important;line-height:1.2!important;letter-spacing:-.025em!important;margin:0 0 5px!important}
+.hhApp h3{font-size:17px;line-height:1.25;letter-spacing:-.015em}
+.hhApp p{color:var(--hh-muted);line-height:1.55}
+.hhApp small{line-height:1.4}
+
+/* Sidebar + shell */
+.hhApp{grid-template-columns:232px minmax(0,1fr)!important}
+.hhSidebar{padding:20px 14px 16px!important;background:color-mix(in srgb,var(--hh-paper) 94%,transparent)!important;border-color:var(--hh-line)!important}
+.hhBrand{font-size:18px!important;padding:4px 10px 20px!important}
+.hhBrandMark{width:34px!important;height:34px!important;border-radius:11px!important;background:var(--hh-accent-soft)!important;color:var(--hh-accent)!important}
+.hhNav{gap:4px!important}
+.hhNav button{min-height:42px!important;padding:10px 12px!important;border-radius:12px!important;font-size:12px!important;color:var(--hh-muted)!important;transition:background .16s ease,color .16s ease,transform .16s ease}
+.hhNav button:hover{background:var(--hh-paper2)!important;color:var(--hh-text)!important}
+.hhNav button.active{background:var(--hh-accent-soft)!important;color:var(--hh-text)!important}
+.hhNav button.active .hhNavIcon{color:var(--hh-accent)!important}
+.hhUserPill,.hhSystemPill{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;border-radius:13px!important;padding:10px!important}
+.hhLogout{font-size:11px!important}
+.hhTopStatus,.hhTheme{background:var(--hh-paper)!important;border-color:var(--hh-line)!important;box-shadow:var(--hh-shadow-sm)!important}
+.hhTheme{width:40px!important;height:40px!important;border-radius:12px!important}
+
+/* Global surfaces. One surface language for every module. */
+.hhApp :where(.panel,.card,.loginCard,.personCardV19,.credentialCardV18,.smartDevice,.networkDevice,.torrent,.mediaStatsV16>div,.mediaItemV16,.switchMonitor,.integrationCard,.topoLane,.topoNode,.switchPort,.actionRule,.alertItem,.signalGridV22 article,.contactEditorV22,.notificationComposerV22,.pushSettingsV22,.accessEditorV21,.systemInfo>div,.stepGrid span,.mediaStepsV16 span,.aiDraftV15,.aiActionPlanV15,.ncoreResultV236,.ncoreEmptyV236,.ncoreErrorV236,.ncoreSetupV236){
+  background:var(--hh-paper)!important;
+  color:var(--hh-text)!important;
+  border:1px solid var(--hh-line)!important;
+  box-shadow:none!important;
+}
+.hhApp .panel{padding:20px!important;border-radius:var(--hh-radius)!important;box-shadow:var(--hh-shadow-sm)!important}
+.hhApp :where(.personCardV19,.credentialCardV18,.smartDevice,.networkDevice,.torrent,.mediaItemV16,.switchMonitor,.integrationCard,.actionRule,.signalGridV22 article){border-radius:15px!important}
+.hhApp :where(.personMetaV19 span,.personDevicesV19>span,.deviceAssignV19 article,.credentialFieldsV18 span,.overviewStats span,.ssidSummary span,.life360MetaV23>span,.identitySummaryV211 span,.actionFields,.detailInfoGrid>div,.gateStatusGrid>div){
+  background:var(--hh-paper2)!important;
+  color:var(--hh-text)!important;
+  border-color:var(--hh-line)!important;
+}
+.hhApp :where(.panel p,.sectionHead p,.card small,.personCardV19 small,.credentialCardV18 small,.smartDevice small,.networkDevice small,.systemInfo small,.signalGridV22 small,.aiSafetyStripV15,.mediaMainV16 span,.mediaMainV16 small){color:var(--hh-muted)!important}
+.sectionHead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px!important;margin-bottom:16px!important}
+.sectionCounter,.credentialOkV18,.statusBadge.good,.integrationBadge.ok{background:var(--hh-success-soft)!important;color:var(--hh-success)!important;border-color:transparent!important}
+
+/* Inputs */
+.hhApp :where(input:not([type="checkbox"]):not([type="radio"]),select,textarea){
+  min-height:var(--hh-control-h);
+  background:var(--hh-control)!important;
+  color:var(--hh-text)!important;
+  border:1px solid var(--hh-line-strong)!important;
+  border-radius:11px!important;
+  padding:10px 12px!important;
+  outline:0;
+  box-shadow:none!important;
+  transition:border-color .15s ease,box-shadow .15s ease,background .15s ease;
+}
+.hhApp textarea{min-height:90px;resize:vertical}
+.hhApp :where(input,select,textarea):focus{border-color:color-mix(in srgb,var(--hh-accent) 62%,var(--hh-line))!important;box-shadow:0 0 0 3px color-mix(in srgb,var(--hh-accent) 13%,transparent)!important}
+.hhApp :where(input,textarea)::placeholder{color:var(--hh-faint)!important;opacity:1}
+.hhApp input[type="checkbox"],.hhApp input[type="radio"]{accent-color:var(--hh-accent)}
+
+/* Shared buttons and links */
+.hhApp :where(.ghost,.primaryAction,.refreshV12,.vaultPrimaryV18,.actionLink,.personActionsV19 button,.credentialActionsV18 a,.credentialActionsV18 button,.ruleActions button,.aiComposerV15 button,.aiAutomationPanelV15>button,.aiQuickComposerV15 button,.aiDraftV15>button,.aiActionPlanV15>button,.mediaActionsV16 a,.profileSaveRowV211 button,.accessSaveRowV211 button,.identityActionsV211 button,.personEditorActionsV19 button,.fileGhostV19,.vacuumStartV13,.detailsV12,.powerV12,.ncoreSearchFormV236 button,.ncoreResultActionsV236 a,.ncoreResultActionsV236 button){
+  min-height:40px;
+  border-radius:11px!important;
+  padding:0 14px!important;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  border:1px solid var(--hh-line)!important;
+  background:var(--hh-paper2)!important;
+  color:var(--hh-text)!important;
+  font-size:12px!important;
+  line-height:1!important;
+  font-weight:800!important;
+  text-decoration:none!important;
+  box-shadow:none!important;
+  white-space:nowrap;
+  transition:background .15s ease,border-color .15s ease,transform .15s ease,opacity .15s ease;
+}
+.hhApp :where(.ghost,.refreshV12,.actionLink,.detailsV12,.credentialActionsV18 a,.credentialActionsV18 button,.personActionsV19 button):hover{background:var(--hh-paper3)!important;border-color:var(--hh-line-strong)!important}
+.hhApp :where(.primaryAction,.vaultPrimaryV18,.profileSaveRowV211 button,.accessSaveRowV211 button,.aiAutomationPanelV15>button,.aiComposerV15 button,.aiQuickComposerV15 button,.ncoreSearchFormV236 button,.ncoreResultActionsV236 button,.vacuumStartV13){background:var(--hh-accent)!important;color:#06110d!important;border-color:var(--hh-accent)!important}
+.hhApp :where(.primaryAction,.vaultPrimaryV18,.profileSaveRowV211 button,.accessSaveRowV211 button,.aiAutomationPanelV15>button,.aiComposerV15 button,.aiQuickComposerV15 button,.ncoreSearchFormV236 button,.ncoreResultActionsV236 button,.vacuumStartV13):hover{background:var(--hh-accent-hover)!important;border-color:var(--hh-accent-hover)!important}
+.hhApp :where(button,a)[disabled],.hhApp button:disabled{opacity:.42!important;cursor:not-allowed!important}
+.hhApp :where(.deleteBtn,.danger,.chargerActions>button.danger){background:var(--hh-danger-soft)!important;color:var(--hh-danger)!important;border-color:color-mix(in srgb,var(--hh-danger) 18%,var(--hh-line))!important}
+
+/* Pills, status and filter controls */
+.hhApp :where(.deviceKind,.integrationBadge,.integrationBadgeV13,.statusBadge,.presenceBadgeV19,.ncoreStateV236,.mediaBadgesV16 span,.priorityBadgeV22,.signalKindV22,.ruleWhen,.ruleThen,.emailRuleToggleV21){
+  border-radius:999px!important;
+  border:1px solid var(--hh-line)!important;
+  background:var(--hh-paper2)!important;
+  color:var(--hh-muted)!important;
+  font-size:9px!important;
+  font-weight:800!important;
+  line-height:1!important;
+}
+.hhApp :where(.deviceKind,.integrationBadgeV13,.mediaBadgesV16 .native){background:var(--hh-blue-soft)!important;color:var(--hh-blue)!important;border-color:transparent!important}
+.hhApp :where(.presenceBadgeV19.home,.ncoreStateV236.ok,.integrationBadge.ok,.statusBadge.good){background:var(--hh-success-soft)!important;color:var(--hh-success)!important;border-color:transparent!important}
+.hhApp :where(.filterBar button,.filterBarV12 button,.timelineFiltersV19 button,.aiStarterV15 button){
+  min-height:34px!important;padding:0 11px!important;border:1px solid var(--hh-line)!important;border-radius:999px!important;background:var(--hh-paper)!important;color:var(--hh-muted)!important;font-size:10px!important;font-weight:750!important;box-shadow:none!important
+}
+.hhApp :where(.filterBar button,.filterBarV12 button,.timelineFiltersV19 button,.aiStarterV15 button):hover{background:var(--hh-paper2)!important;color:var(--hh-text)!important}
+.hhApp :where(.filterBar button.active,.filterBarV12 button.active,.timelineFiltersV19 button.active){background:var(--hh-accent-soft)!important;color:var(--hh-accent-ink)!important;border-color:color-mix(in srgb,var(--hh-accent) 26%,var(--hh-line))!important}
+
+/* Page hero blocks: same density and hierarchy everywhere */
+.hhApp :where(.smartHeroV12,.peopleHeroV19,.timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.aiHeroV15,.mediaHeroV16){
+  padding:20px 22px!important;
+  border-radius:var(--hh-radius)!important;
+  background:var(--hh-paper)!important;
+  color:var(--hh-text)!important;
+  border:1px solid var(--hh-line)!important;
+  box-shadow:var(--hh-shadow-sm)!important;
+  min-height:0!important;
+}
+.hhApp :where(.smartHeroV12,.peopleHeroV19,.timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.aiHeroV15,.mediaHeroV16) h2{font-size:24px!important;margin:4px 0 5px!important;letter-spacing:-.03em!important}
+.hhApp :where(.smartHeroV12,.peopleHeroV19,.timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.aiHeroV15,.mediaHeroV16) p{font-size:12px!important;line-height:1.5!important;max-width:880px!important;color:var(--hh-muted)!important}
+
+/* Smart Life */
+.smartPanelV12{padding:0!important;overflow:hidden!important;background:var(--hh-paper)!important}
+.smartSummaryV12{padding:0 22px!important;margin-top:0!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:0!important}
+.smartSummaryTileV12{min-height:90px!important;padding:16px 18px!important;border:0!important;border-right:1px solid var(--hh-line)!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+.smartSummaryTileV12:last-child{border-right:0!important}.smartSummaryTileV12:after{display:none!important}
+.smartSummaryTileV12 span{font-size:9px!important;text-transform:uppercase;letter-spacing:.08em;color:var(--hh-muted)!important}.smartSummaryTileV12 strong{font-size:24px!important;color:var(--hh-text)!important}.smartSummaryTileV12 small{font-size:9px!important;color:var(--hh-muted)!important}
+.smartToolbarV12{padding:16px 22px 18px!important;gap:12px!important;border-top:1px solid var(--hh-line)}
+.smartSearchV12{height:42px!important;background:var(--hh-control)!important;border:1px solid var(--hh-line-strong)!important;border-radius:11px!important;max-width:520px!important}.smartSearchV12 input{min-height:0!important;border:0!important;padding:0!important;background:transparent!important;box-shadow:none!important}
+.smartGridV12,.smartGridV13{padding:0 22px 22px!important;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))!important;gap:12px!important}
+.smartDevice{min-height:0!important;padding:16px!important;background:var(--hh-paper)!important}
+.smartCardTop{grid-template-columns:38px minmax(0,1fr) auto!important;gap:10px!important}.deviceIconV12{width:38px!important;height:38px!important;border-radius:11px!important;border:0!important;background:var(--hh-paper2)!important}
+.smartCardTitle strong{font-size:14px!important}.smartCardIdentity>small{font-size:9px!important;color:var(--hh-muted)!important}
+.sensorHeroV12{margin-top:12px!important;padding-top:12px!important;border-color:var(--hh-line)!important}.sensorHeroV12>div{background:transparent!important;border-color:var(--hh-line)!important}.sensorHeroV12 strong{font-size:18px!important}.sensorHeroV12 span{color:var(--hh-muted)!important}
+.climateTempV12,.climateMiniStatsV12 span,.chargerStateV12,.chargerMiniMetricsV12 span,.gateCardStateV12,.switchCardStateV12{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;color:var(--hh-text)!important}
+.switchCardStateV12{min-height:64px!important;padding:12px 14px!important;margin-top:10px!important;width:100%!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;overflow:hidden!important}
+.switchCardStateV12>span{display:grid!important;gap:2px!important;min-width:0!important;color:var(--hh-text)!important}.switchCardStateV12>span small{font-size:8px!important;color:var(--hh-muted)!important}.switchCardStateV12>span strong{font-size:13px!important}
+.smartToggleV12{flex:0 0 48px!important;width:48px!important;height:27px!important;border:0!important;background:color-mix(in srgb,var(--hh-muted) 28%,var(--hh-paper2))!important}.smartToggleV12 i{width:21px!important;height:21px!important;left:3px!important;top:3px!important;background:#fff!important}.smartToggleV12.on{background:var(--hh-accent)!important}.smartToggleV12.on i{left:24px!important}
+.smartCardActionsV12{gap:8px!important;margin-top:12px!important;padding-top:0!important}.smartCardActionsV12 .detailsV12{flex:1}
+.smartInfoV12,.xiaomiSetupV13,.scenesV12{background:var(--hh-paper2)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important;box-shadow:none!important}
+
+/* AI assistant: compact conversation and one control language */
+.aiTabV15{gap:12px!important}.aiHeroStateV15{gap:5px!important}.aiStatusV15{background:var(--hh-success-soft)!important;color:var(--hh-success)!important;border-color:transparent!important}
+.aiModePanelV15{grid-template-columns:minmax(220px,.65fr) minmax(0,1.6fr)!important;gap:20px!important;align-items:center!important}.aiModePickerV15{gap:8px!important}.aiModePickerV15 button{min-height:58px!important;padding:10px 12px!important;border:1px solid var(--hh-line)!important;border-radius:12px!important;background:var(--hh-paper2)!important;color:var(--hh-text)!important;box-shadow:none!important}.aiModePickerV15 button small{color:var(--hh-muted)!important}.aiModePickerV15 button.active{background:var(--hh-accent-soft)!important;color:var(--hh-accent-ink)!important;border-color:color-mix(in srgb,var(--hh-accent) 30%,var(--hh-line))!important}
+.aiGridV15{gap:12px!important;grid-template-columns:minmax(0,1.45fr) minmax(330px,.75fr)!important}.aiChatPanelV15,.aiAutomationPanelV15,.aiQuickActionV15{padding:20px!important}.aiMessagesV15{min-height:210px!important;max-height:400px!important;padding:8px 0!important}.aiMessageV15 p{background:var(--hh-paper2)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important}.aiMessageV15.user p{background:var(--hh-accent-soft)!important;color:var(--hh-accent-ink)!important;border-color:transparent!important}.aiComposerV15{grid-template-columns:minmax(0,1fr) auto!important;align-items:end!important}.aiComposerV15 textarea,.aiAutomationPanelV15 textarea{background:var(--hh-control)!important;color:var(--hh-text)!important;border-color:var(--hh-line-strong)!important}.aiSafetyStripV15,.aiDraftV15,.aiActionPlanV15{background:var(--hh-paper2)!important;color:var(--hh-muted)!important;border-color:var(--hh-line)!important}.aiSafetyStripV15 b{color:var(--hh-text)!important}
+
+/* Timeline */
+.timelineHeroV19{align-items:center!important}.timelineFiltersV19{gap:6px!important}.homeTimelineV19{gap:0!important}.homeTimelineV19 article{min-height:50px!important;padding:10px 4px!important;border-bottom:1px solid var(--hh-line)!important;grid-template-columns:34px minmax(0,1fr) auto!important;gap:12px!important}.homeTimelineV19 strong{font-size:12px!important;line-height:1.35!important}.homeTimelineV19 span,.homeTimelineV19 time{font-size:9px!important;color:var(--hh-muted)!important}.timelineIconV19{width:30px!important;height:30px!important;border-radius:9px!important;background:var(--hh-paper2)!important;color:var(--hh-blue)!important}
+
+/* Actions / automations */
+.automationStats{background:transparent!important;border:1px solid var(--hh-line)!important;border-radius:15px!important;gap:0!important}.automationStats>div{min-height:76px!important;padding:13px 16px!important;background:var(--hh-paper)!important;border-right:1px solid var(--hh-line)!important}.automationStats>div:last-child{border-right:0!important}.automationStats span{font-size:9px!important;color:var(--hh-muted)!important}.automationStats strong{font-size:19px!important}.automationStats small{font-size:9px!important;color:var(--hh-muted)!important}
+.signalStatusPanelV22{padding:20px!important}.signalGridV22{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;gap:9px!important}.signalGridV22 article{padding:12px!important;background:var(--hh-paper2)!important}.signalGridV22 b{font-size:16px!important}.actionRulesPanel,.alertsPanel{padding:20px!important}.actionRule{padding:13px!important;background:var(--hh-paper2)!important}.ruleFlow{font-size:10px!important}.ruleFlow b{color:var(--hh-text)!important}.alertItem{background:var(--hh-paper2)!important}.contactEditorV22,.notificationComposerV22,.pushSettingsV22{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important}.channelPrefsV22 label,.recipientGridV22 label,.channelPickerV22 label{background:var(--hh-paper)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important}
+
+/* Network */
+.networkPanel{gap:12px!important}.networkHealthSummary{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;padding:12px 15px!important;border-radius:14px!important;box-shadow:none!important}.networkHealthSummary strong,.networkHealthSummary b{font-size:19px!important}.networkHealthSummary span{font-size:9px!important;color:var(--hh-muted)!important}.topologyLegend{font-size:9px!important;color:var(--hh-muted)!important}.topoLane{padding:12px!important;background:var(--hh-paper)!important}.topoNode{padding:10px!important;background:var(--hh-paper2)!important}.topoNodeTitle strong{font-size:11px!important}.topoNode small,.topoState{font-size:9px!important;color:var(--hh-muted)!important}.portLabel{font-size:8px!important;color:var(--hh-muted)!important}.switchMonitor{padding:16px!important}.switchPortGrid{gap:9px!important}.switchPort{padding:11px!important;background:var(--hh-paper2)!important}.switchPort strong{font-size:16px!important}.switchPort span,.switchPort small{font-size:10px!important;color:var(--hh-muted)!important}.networkWarning{background:var(--hh-warn-soft)!important;color:var(--hh-warn)!important;border:1px solid color-mix(in srgb,var(--hh-warn) 20%,var(--hh-line))!important}.networkDevice{background:var(--hh-paper)!important}
+
+/* Credentials */
+.credentialsHeroV18{align-items:center!important}.credentialSummaryV18{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;border-radius:14px!important;padding:12px 15px!important;min-width:160px!important}.credentialSummaryV18 strong{font-size:24px!important}.credentialSummaryV18 span{font-size:10px!important;color:var(--hh-muted)!important}.credentialGridV18{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))!important;gap:10px!important}.credentialCardV18{padding:14px!important}.credentialFieldsV18 span{padding:10px!important;border-radius:10px!important}.credentialFieldsV18 small{font-size:9px!important;color:var(--hh-muted)!important}.credentialFieldsV18 b{font-size:11px!important}.credentialActionsV18{gap:7px!important;margin-top:10px!important}
+
+/* People */
+.peopleGridV19{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))!important;gap:12px!important}.personCardV19{padding:16px!important}.personHeadV19 strong{font-size:16px!important}.personMetaV19{gap:7px!important;margin:12px 0!important}.personMetaV19 span{padding:9px!important}.personActionsV19{gap:7px!important;margin-top:12px!important}.contactEditorV22{padding:16px!important}.contactFieldsV22{gap:10px!important}.channelPrefsV22{gap:8px!important}.profileSaveRowV211,.accessSaveRowV211{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;border-radius:12px!important}
+
+/* Settings + system cards */
+.settings{gap:16px!important}.systemInfo{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))!important;gap:9px!important}.systemInfo>div{padding:13px!important;background:var(--hh-paper2)!important;border-radius:13px!important}.systemInfo span{font-size:10px!important;color:var(--hh-muted)!important}.systemInfo strong{font-size:16px!important;color:var(--hh-text)!important}.systemInfo small{font-size:9px!important;color:var(--hh-muted)!important}.life360PanelV23{gap:12px!important}.life360MembersV23 article{background:var(--hh-paper2)!important;border-color:var(--hh-line)!important;border-radius:12px!important;padding:10px!important}.life360MembersV23 small{color:var(--hh-muted)!important}
+
+/* Media + nCore */
+.mediaStatsV16{gap:9px!important}.mediaStatsV16>div{padding:14px 16px!important;background:var(--hh-paper)!important;border-radius:14px!important}.mediaStatsV16 span{font-size:9px!important;color:var(--hh-muted)!important}.mediaStatsV16 strong{font-size:20px!important}.mediaLibraryV16{padding:18px!important}.mediaItemV16{padding:11px 12px!important;background:var(--hh-paper2)!important}.mediaSearchV16{background:var(--hh-control)!important;border-color:var(--hh-line-strong)!important}.mediaToolbarV16 select{background:var(--hh-control)!important;color:var(--hh-text)!important;border-color:var(--hh-line-strong)!important}.ncorePanelV236{gap:14px!important}.ncoreResultV236{background:var(--hh-paper2)!important}.ncoreMetaV236 span{background:var(--hh-paper)!important;border-color:var(--hh-line)!important}.ncoreEmptyV236,.ncoreErrorV236,.ncoreSetupV236{background:var(--hh-paper2)!important}
+
+/* Modals */
+.modalBack,.actionModalBack{background:rgba(5,10,8,.48)!important;backdrop-filter:blur(10px)!important}.deviceDetail,.actionComposer,.modal{background:var(--hh-paper)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important;box-shadow:0 30px 90px rgba(0,0,0,.24)!important}.detailHead{background:color-mix(in srgb,var(--hh-paper) 94%,transparent)!important;border-color:var(--hh-line)!important}.closeBtn,.detailClose{background:var(--hh-paper2)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important}.detailSelect,.toggleAction,.settingRow,.vacuumNoteV13{background:var(--hh-paper2)!important;color:var(--hh-text)!important;border-color:var(--hh-line)!important}
+
+/* Wide desktop: keep readability on ultrawide displays. */
+@media(min-width:1800px){
+  .hhApp{grid-template-columns:244px minmax(0,1fr)!important}
+  .hhMain{padding-left:38px!important;padding-right:38px!important}
+  .smartGridV12,.smartGridV13{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+  .credentialGridV18,.peopleGridV19{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+}
+
+@media(max-width:1180px){
+  .hhApp{grid-template-columns:86px minmax(0,1fr)!important}
+  .hhBrand>span:last-child,.hhDesktopNav button>span:nth-child(2),.hhSidebarBottom small,.hhLogout,.hhUserPill>div,.hhSystemPill>div{display:none!important}
+  .hhBrand,.hhDesktopNav button,.hhUserPill,.hhSystemPill{justify-content:center!important}
+  .smartGridV12,.smartGridV13{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .credentialGridV18,.peopleGridV19{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .aiGridV15{grid-template-columns:1fr!important}
+}
+
+@media(max-width:760px){
+  .hhApp{display:block!important;padding-bottom:88px!important}.hhMain{padding:0 10px 24px!important;overflow-x:hidden!important}.hhMain>.hhTopbar,.hhMain>.tabPanel{width:100%}
+  .hhTopbar{position:sticky;top:0;z-index:70;margin:0 -10px 12px!important;padding:10px!important;background:color-mix(in srgb,var(--hh-bg) 92%,transparent)!important;backdrop-filter:blur(18px)}
+  .hhTopbar h1{font-size:21px!important}.hhSidebar{left:8px!important;right:8px!important;bottom:max(8px,env(safe-area-inset-bottom))!important;padding:6px!important;border-radius:18px!important}.hhMobileNav button{min-height:48px!important}
+  .hhApp .panel{padding:15px!important;border-radius:16px!important}.tabPanel{gap:11px!important}.sectionHead{flex-direction:column;align-items:stretch!important;margin-bottom:13px!important}.sectionHead h2,.hhApp .panel h2{font-size:19px!important}.sectionHead p,.hhApp .panel p{font-size:12px!important}
+  .hhApp :where(.smartHeroV12,.peopleHeroV19,.timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.aiHeroV15,.mediaHeroV16){padding:16px!important;border-radius:16px!important;display:grid!important;grid-template-columns:1fr!important;gap:12px!important;align-items:start!important}.hhApp :where(.smartHeroV12,.peopleHeroV19,.timelineHeroV19,.networkHeroV17,.credentialsHeroV18,.actionsHero,.aiHeroV15,.mediaHeroV16) h2{font-size:22px!important}
+  .smartSummaryV12{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:0 15px!important}.smartSummaryTileV12{padding:12px!important;min-height:78px!important;border-bottom:1px solid var(--hh-line)!important}.smartSummaryTileV12:nth-child(2n){border-right:0!important}.smartToolbarV12{padding:14px 15px!important}.smartGridV12,.smartGridV13{grid-template-columns:1fr!important;padding:0 15px 16px!important}.smartDevice{padding:14px!important}.smartCardActionsV12{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .aiModePanelV15{grid-template-columns:1fr!important;gap:12px!important}.aiModePickerV15{grid-template-columns:1fr!important}.aiGridV15{grid-template-columns:1fr!important}.aiChatPanelV15,.aiAutomationPanelV15,.aiQuickActionV15{padding:16px!important}.aiMessagesV15{min-height:160px!important}.aiComposerV15{grid-template-columns:1fr!important}.aiComposerV15 button{width:100%}
+  .automationStats{grid-template-columns:repeat(2,minmax(0,1fr))!important}.automationStats>div:nth-child(2n){border-right:0!important}.signalGridV22{grid-template-columns:1fr!important}.homeTimelineV19 article{grid-template-columns:30px minmax(0,1fr)!important}.homeTimelineV19 time{grid-column:2;justify-self:start}.timelineFiltersV19{overflow-x:auto;flex-wrap:nowrap!important;justify-content:flex-start!important}.timelineFiltersV19 button{flex:none}
+  .credentialGridV18,.peopleGridV19{grid-template-columns:1fr!important}.credentialSummaryV18{width:100%!important}.credentialFieldsV18{grid-template-columns:1fr 1fr!important}.credentialActionsV18{display:grid!important;grid-template-columns:1fr 1fr!important}.personMetaV19{grid-template-columns:1fr!important}.personFormV19,.accessFieldsV21,.contactFieldsV22,.channelPrefsV22{grid-template-columns:1fr!important}
+  .switchPortGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.topology{min-width:0!important}.topologySections,.portsV11,.port2Tree,.meshNodesV11{grid-template-columns:1fr!important}.topoRoot:after,.topologySections:before,.treeBranch:before,.chainArrow{display:none!important}
+  .systemInfo{grid-template-columns:1fr!important}.mediaStatsV16{grid-template-columns:repeat(2,minmax(0,1fr))!important}.mediaToolbarV16{grid-template-columns:1fr!important}.mediaItemV16{grid-template-columns:38px minmax(0,1fr)!important}.mediaActionsV16{grid-column:1/-1!important;display:grid!important;grid-template-columns:1fr 1fr!important}.ncoreSearchFormV236{grid-template-columns:1fr!important}.ncoreResultV236{grid-template-columns:1fr!important}
+  .detailModalV12,.actionComposer{width:calc(100vw - 12px)!important;max-width:calc(100vw - 12px)!important;height:calc(100dvh - 12px)!important;max-height:calc(100dvh - 12px)!important;border-radius:18px!important;margin:6px!important}
+}
+
+@media(max-width:430px){
+  .smartSummaryV12,.automationStats,.mediaStatsV16{grid-template-columns:1fr 1fr!important}
+  .switchPortGrid{grid-template-columns:1fr!important}
+  .credentialFieldsV18{grid-template-columns:1fr!important}
+  .credentialActionsV18,.mediaActionsV16,.smartCardActionsV12{grid-template-columns:1fr!important}
+}
