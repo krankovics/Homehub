@@ -2,6 +2,7 @@ package cloudstate
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -37,6 +38,20 @@ func Save(path string, f File) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0600); err != nil {
 		return err
+	}
+	// Keep three automatic generations before replacing the WD persistent state.
+	// This makes accidental cloud-side regressions recoverable after a Render deploy.
+	for i := 3; i >= 2; i-- {
+		old := fmt.Sprintf("%s.prev%d", path, i-1)
+		next := fmt.Sprintf("%s.prev%d", path, i)
+		if _, err := os.Stat(old); err == nil {
+			_ = os.Rename(old, next)
+		}
+	}
+	if _, err := os.Stat(path); err == nil {
+		if old, e := os.ReadFile(path); e == nil {
+			_ = os.WriteFile(path+".prev1", old, 0600)
+		}
 	}
 	return os.Rename(tmp, path)
 }

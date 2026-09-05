@@ -382,3 +382,8 @@ html[data-theme="dark"]{color-scheme:dark;--hh-control:#101814;--hh-control-text
     padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
 }
+
+/* v0.23.0 – Life360 integration */
+.life360PanelV23{display:grid;gap:14px}.life360ActionsV23{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.life360MetaV23{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.life360MetaV23>span{display:grid;gap:4px;padding:12px;border:1px solid var(--hh-line);background:var(--hh-paper2);border-radius:14px}.life360MetaV23 small{color:var(--hh-muted)}.life360MembersV23{display:grid;gap:9px}.life360MembersV23 article{display:grid;grid-template-columns:minmax(180px,1fr) minmax(190px,280px) auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--hh-line);border-radius:14px;background:var(--hh-paper2)}.life360MembersV23 article>div:first-child{display:grid;gap:3px;min-width:0}.life360MembersV23 small{color:var(--hh-muted);overflow:hidden;text-overflow:ellipsis}.life360MembersV23 select{width:100%;border:1px solid var(--hh-line);background:var(--hh-paper);color:var(--hh-text);border-radius:11px;padding:10px}.life360MemberStatsV23{display:flex;gap:8px;flex-wrap:wrap}.life360MemberStatsV23 span{font-size:11px;color:var(--hh-muted)}@media(max-width:720px){.life360MetaV23{grid-template-columns:1fr}.life360MembersV23 article{grid-template-columns:1fr}.life360ActionsV23{justify-content:flex-start}}
+
+.stateSyncBannerV23{margin:0 0 14px;padding:12px 14px;border-radius:14px;border:1px solid rgba(226,184,95,.35);background:rgba(226,184,95,.11);display:flex;gap:10px;align-items:center;flex-wrap:wrap}.stateSyncBannerV23 b{color:var(--hh-text)}.stateSyncBannerV23 span{color:var(--hh-muted);font-size:12px}

@@ -61,3 +61,19 @@ services:
         sync: false
       - key: TWILIO_FROM_NUMBER
         sync: false
+      - key: LIFE360_USERNAME
+        sync: false
+      - key: LIFE360_PASSWORD
+        sync: false
+      - key: LIFE360_REFRESH_MS
+        value: "120000"
+      - key: LIFE360_CIRCLE_ID
+        sync: false
+      - key: LIFE360_HOME_LATITUDE
+        sync: false
+      - key: LIFE360_HOME_LONGITUDE
+        sync: false
+      - key: LIFE360_HOME_RADIUS_M
+        value: "150"
+      - key: LIFE360_TIMEOUT_MS
+        value: "35000"

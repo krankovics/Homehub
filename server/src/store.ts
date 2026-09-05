@@ -24,17 +24,21 @@ const initialState: State = {
   deviceIdentityOverrides: {},
   tuyaLogCursor: {},
   externalSignals: {},
+  life360MemberMap: {},
   persistentUpdatedAt: null
 };
 
 export class Store {
   private file: string;
   private state: State;
+  private bootstrapPending: boolean;
 
   constructor(file: string) {
     this.file = path.resolve(file);
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    if (fs.existsSync(this.file)) {
+    const existed = fs.existsSync(this.file);
+    this.bootstrapPending = !existed;
+    if (existed) {
       try {
         const disk = JSON.parse(fs.readFileSync(this.file, "utf8"));
         this.state = {
@@ -55,6 +59,7 @@ export class Store {
           deviceIdentityOverrides: disk.deviceIdentityOverrides || {},
           tuyaLogCursor: disk.tuyaLogCursor || {},
           externalSignals: disk.externalSignals || {},
+          life360MemberMap: disk.life360MemberMap || {},
           persistentUpdatedAt: disk.persistentUpdatedAt || null
         };
       } catch {
@@ -66,9 +71,9 @@ export class Store {
     }
   }
 
-  get(): State {
-    return this.state;
-  }
+  get(): State { return this.state; }
+  isBootstrapPending(){ return this.bootstrapPending; }
+  markBootstrapComplete(){ this.bootstrapPending = false; }
 
   mutate(fn: (state: State) => void, persistent = true): State {
     fn(this.state);
@@ -95,14 +100,18 @@ export class Store {
       historySampleKey: this.state.historySampleKey,
       deviceIdentityOverrides: structuredClone(this.state.deviceIdentityOverrides),
       tuyaLogCursor: structuredClone(this.state.tuyaLogCursor),
-      externalSignals: structuredClone(this.state.externalSignals)
+      externalSignals: structuredClone(this.state.externalSignals),
+      life360MemberMap: structuredClone(this.state.life360MemberMap)
     };
   }
 
   importPersistent(backup: PersistentBackup): boolean {
     const incoming = new Date(backup.persistentUpdatedAt || 0).getTime();
     const current = new Date(this.state.persistentUpdatedAt || 0).getTime();
-    if (!Number.isFinite(incoming) || incoming <= current) return false;
+    if (!Number.isFinite(incoming)) return false;
+    // Render uses ephemeral /tmp storage. On a fresh instance the first WD backup is authoritative,
+    // even if background Tuya/Life360 work already touched persistentUpdatedAt locally.
+    if (!this.bootstrapPending && incoming <= current) return false;
     this.state.settings = { ...initialState.settings, ...(backup.settings || {}) };
     this.state.copies = backup.copies || {};
     this.state.commands = Array.isArray(backup.commands) ? backup.commands.slice(-200) : [];
@@ -118,7 +127,9 @@ export class Store {
     this.state.deviceIdentityOverrides = backup.deviceIdentityOverrides || {};
     this.state.tuyaLogCursor = backup.tuyaLogCursor || {};
     this.state.externalSignals = backup.externalSignals || {};
+    this.state.life360MemberMap = backup.life360MemberMap || {};
     this.state.persistentUpdatedAt = backup.persistentUpdatedAt;
+    this.bootstrapPending = false;
     this.save();
     return true;
   }

@@ -14,8 +14,9 @@ import { NotificationRouter } from "./notifier.js";
 import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
+import { Life360Service, haversineMeters } from "./life360.js";
 
-const VERSION = "0.22.2";
+const VERSION = "0.23.0";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -33,6 +34,11 @@ const TUYA_API_ENDPOINT = process.env.TUYA_API_ENDPOINT || "https://openapi.tuya
 const TUYA_REFRESH_MS = Number(process.env.TUYA_REFRESH_MS || 15_000);
 const TUYA_LOG_REFRESH_MS = Math.max(60_000, Number(process.env.TUYA_LOG_REFRESH_MS || 300_000));
 const TUYA_LOG_LOOKBACK_MS = Math.max(60_000, Number(process.env.TUYA_LOG_LOOKBACK_MS || 15 * 60_000));
+const LIFE360_REFRESH_MS = Math.max(60_000, Number(process.env.LIFE360_REFRESH_MS || 120_000));
+const envNumber = (value: string | undefined) => value && value.trim() ? Number(value) : Number.NaN;
+const LIFE360_HOME_LAT = envNumber(process.env.LIFE360_HOME_LATITUDE);
+const LIFE360_HOME_LON = envNumber(process.env.LIFE360_HOME_LONGITUDE);
+const LIFE360_HOME_RADIUS_M = Math.max(25, Number(process.env.LIFE360_HOME_RADIUS_M || 150));
 const tuya = new TuyaService(TUYA_API_ENDPOINT, TUYA_ACCESS_ID, TUYA_ACCESS_SECRET);
 const mailer = new Mailer();
 
@@ -47,6 +53,7 @@ const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 const store = new Store(DATA_FILE);
 const notifier = new NotificationRouter(store, mailer);
 const ai = new AIService(store, tuya);
+const life360 = new Life360Service(path.resolve(process.env.LIFE360_CONNECTOR || "server/connectors/life360_connector.py"));
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 app.use(express.json({ limit: "24mb" }));
@@ -56,6 +63,14 @@ app.use((req, res, next) => {
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
   }
+  next();
+});
+
+app.use((req, res, next) => {
+  if (!store.isBootstrapPending()) return next();
+  const mutating = ["POST","PUT","PATCH","DELETE"].includes(req.method);
+  const protectedWrite = req.path.startsWith("/api/people") || req.path.startsWith("/api/automations") || req.path.startsWith("/api/settings") || req.path.startsWith("/api/network/identity");
+  if (mutating && protectedWrite) return res.status(503).json({ error:"state_sync_pending", message:"A WD állapot visszaállítása folyamatban. A szerkesztés átmenetileg le van tiltva." });
   next();
 });
 
@@ -327,7 +342,9 @@ function publicState(user?: SessionUser) {
       email: automationEngine.emailStatus(),
       notification: automationEngine.notificationStatus()
     },
-    ai: ai.status()
+    ai: ai.status(),
+    persistence: { bootstrapPending: store.isBootstrapPending() },
+    life360: { ...life360.getStatus(), mapping: s.life360MemberMap }
   };
 }
 
@@ -659,8 +676,9 @@ const automationRuleInputSchema = z.object({
 });
 
 type AutomationRuleInput = Pick<AutomationRule, "name" | "enabled" | "trigger" | "actions" | "cooldownSeconds" | "notifyEmail" | "notification" | "safety">;
+type AutomationGateSafetyInput = Pick<AutomationRule, "actions" | "safety">;
 
-function automationGateSafety(rule: AutomationRuleInput) {
+function automationGateSafety(rule: AutomationGateSafetyInput) {
   for (const action of rule.actions) {
     if (action.type !== "tuya.command") continue;
     const d = tuya.state().devices.find(x => x.id === action.deviceId);
@@ -754,15 +772,9 @@ app.post("/api/ai/automation-draft", userAuth, async (req, res) => {
       if (!validated.success) {
         result.valid = false;
         result.warnings.push("HIBA: A generált szabály nem felel meg a HomeHub szabálysémának.");
-      } else {
-        // safeParse above guarantees the required AutomationRuleInput shape at runtime.
-        // Zod's inferred type for the recursive trigger schema is slightly wider and marks
-        // trigger optional, so narrow it only after successful validation.
-        const validatedRule = validated.data as AutomationRuleInput;
-        if (!automationGateSafety(validatedRule)) {
-          result.valid = false;
-          result.warnings.push("HIBA: A HomeHub kapubiztonsági policy blokkolta a szabályt.");
-        }
+      } else if (!automationGateSafety(validated.data)) {
+        result.valid = false;
+        result.warnings.push("HIBA: A HomeHub kapubiztonsági policy blokkolta a szabályt.");
       }
     }
     res.json(result);
@@ -949,6 +961,48 @@ app.post("/api/copies/:hash/retry", userAuth, (req, res) => {
   res.status(202).json(cmd);
 });
 
+
+function life360PersonFor(member:any){
+  const mapped = store.get().life360MemberMap[member.id];
+  if(mapped) return store.get().people.find(p=>p.id===mapped);
+  const first = String(member.firstName||"").trim().toLocaleLowerCase("hu-HU");
+  return store.get().people.find(p => [p.name,p.nickname].filter(Boolean).some(n => String(n).trim().toLocaleLowerCase("hu-HU")===first));
+}
+function setLife360Signal(s:any,key:string,value:string|number|boolean,label:string,personId?:string,category:"geofence"|"generic"="generic") {
+  const prev=s.externalSignals[key]; if(prev && prev.value===value) return;
+  const now=new Date().toISOString(); s.externalSignals[key]={key,value,label,category,source:"life360",personId,updatedAt:now};
+}
+async function refreshLife360(){
+  const st=await life360.refresh();
+  if(!st.online) return;
+  store.mutate(s=>{
+    for(const m of st.members){
+      const person=life360PersonFor(m), pid=person?.id, base=`life360.${pid||m.id}`;
+      const loc=m.location||{} as any;
+      const lat=Number(loc.latitude), lon=Number(loc.longitude), battery=Number(loc.battery), speed=Number(loc.speed);
+      if(Number.isFinite(lat)) setLife360Signal(s,`${base}.latitude`,lat,`${person?.name||m.firstName||"Life360"} szélesség`,pid);
+      if(Number.isFinite(lon)) setLife360Signal(s,`${base}.longitude`,lon,`${person?.name||m.firstName||"Life360"} hosszúság`,pid);
+      if(Number.isFinite(battery)) setLife360Signal(s,`${base}.battery`,battery,`${person?.name||m.firstName||"Life360"} akkumulátor`,pid);
+      if(Number.isFinite(speed)) setLife360Signal(s,`${base}.speed`,speed,`${person?.name||m.firstName||"Life360"} sebesség`,pid);
+      if(loc.name) setLife360Signal(s,`${base}.place`,String(loc.name),`${person?.name||m.firstName||"Life360"} hely`,pid);
+      if(Number.isFinite(lat)&&Number.isFinite(lon)&&Number.isFinite(LIFE360_HOME_LAT)&&Number.isFinite(LIFE360_HOME_LON)){
+        const dist=Math.round(haversineMeters(lat,lon,LIFE360_HOME_LAT,LIFE360_HOME_LON));
+        setLife360Signal(s,`${base}.distance_home_m`,dist,`${person?.name||m.firstName||"Life360"} távolság otthontól`,pid);
+        setLife360Signal(s,`${base}.home`,dist<=LIFE360_HOME_RADIUS_M,`${person?.name||m.firstName||"Life360"} Life360 otthon`,pid,"geofence");
+      }
+    }
+  }, false);
+  automationEngine.tick().catch(()=>{});
+}
+app.get("/api/integrations/life360", adminOnly, (_req,res)=>res.json({...life360.getStatus(),mapping:store.get().life360MemberMap,homeGeofenceConfigured:Number.isFinite(LIFE360_HOME_LAT)&&Number.isFinite(LIFE360_HOME_LON),homeRadiusM:LIFE360_HOME_RADIUS_M}));
+app.post("/api/integrations/life360/refresh", adminOnly, async (_req,res)=>{ await refreshLife360(); res.json({...life360.getStatus(),mapping:store.get().life360MemberMap}); });
+app.put("/api/integrations/life360/mapping", adminOnly, (req,res)=>{
+  const parsed=z.object({memberId:z.string().min(1).max(160),personId:z.string().max(160)}).safeParse(req.body||{}); if(!parsed.success)return res.status(400).json({error:parsed.error.flatten()});
+  if(parsed.data.personId && !store.get().people.some(p=>p.id===parsed.data.personId)) return res.status(404).json({error:"person_not_found"});
+  store.mutate(s=>{ if(parsed.data.personId)s.life360MemberMap[parsed.data.memberId]=parsed.data.personId; else delete s.life360MemberMap[parsed.data.memberId]; });
+  res.json({ok:true,mapping:store.get().life360MemberMap});
+});
+
 const persistentBackupSchema = z.object({
   version: z.literal(1),
   persistentUpdatedAt: z.string(),
@@ -973,7 +1027,8 @@ const persistentBackupSchema = z.object({
     key: z.string(), label: z.string().optional(), category: z.enum(["geofence","ble","generic"]).optional(),
     value: z.union([z.string(),z.number(),z.boolean()]), source: z.string().optional(), personId: z.string().optional(),
     updatedAt: z.string(), expiresAt: z.string().optional()
-  })).optional()
+  })).optional(),
+  life360MemberMap: z.record(z.string()).optional()
 });
 
 app.post("/api/bridge/heartbeat", bridgeAuth, (req, res) => {
@@ -1052,6 +1107,7 @@ app.post("/api/bridge/snapshot", bridgeAuth, (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const snapshot = parsed.data as Snapshot;
   if (snapshot.persistentState) store.importPersistent(snapshot.persistentState as PersistentBackup);
+  else store.markBootstrapComplete();
   store.mutate((s) => {
     const previousMedia = s.snapshot?.media;
     const events = deriveNetworkEvents(s.snapshot?.network || [], snapshot.network || []);
@@ -1230,6 +1286,10 @@ if (tuya.state().configured) {
   setInterval(() => refreshTuyaWithHistory().catch(() => {}), TUYA_REFRESH_MS).unref();
   setTimeout(() => refreshTuyaLogs().catch(() => {}), 8_000).unref();
   setInterval(() => refreshTuyaLogs().catch(() => {}), TUYA_LOG_REFRESH_MS).unref();
+}
+if (life360.getStatus().configured) {
+  setTimeout(() => refreshLife360().catch(() => {}), 12_000).unref();
+  setInterval(() => refreshLife360().catch(() => {}), LIFE360_REFRESH_MS).unref();
 }
 setInterval(() => automationEngine.tick().catch(() => {}), 10_000).unref();
 

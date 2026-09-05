@@ -398,6 +398,7 @@ export type PersistentBackup = {
   deviceIdentityOverrides?: Record<string, DeviceIdentityOverride>;
   tuyaLogCursor?: Record<string, number>;
   externalSignals?: Record<string, ExternalSignalRecord>;
+  life360MemberMap?: Record<string, string>;
 };
 
 export type State = {
@@ -418,5 +419,6 @@ export type State = {
   deviceIdentityOverrides: Record<string, DeviceIdentityOverride>;
   tuyaLogCursor: Record<string, number>;
   externalSignals: Record<string, ExternalSignalRecord>;
+  life360MemberMap: Record<string, string>;
   persistentUpdatedAt: string | null;
 };
