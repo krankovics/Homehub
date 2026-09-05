@@ -13,6 +13,7 @@ const BRIDGE_ID = String(process.env.NCORE_BRIDGE_ID || "home-1").trim() || "hom
 const BRIDGE_FRESH_MS = 10_000;
 const COMMAND_LEASE_MS = 20_000;
 const COMMAND_WAIT_MS = Math.max(15_000, Math.min(60_000, Number(process.env.NCORE_BRIDGE_WAIT_MS || 35_000)));
+const BRIDGE_SEARCH_BLOCK_MS = 5 * 60_000;
 
 type BrokerCommand = {
   id: string;
@@ -33,6 +34,8 @@ let bridgeState = {
   version: "",
   configured: false,
 };
+let bridgeSearchBlockedUntil = 0;
+let bridgeSearchLastError = "";
 
 function parseCookieHeader(raw: string) {
   const out: Record<string, string> = {};
@@ -74,6 +77,15 @@ function requireBridge(req: any, res: any, next: any) {
 
 function bridgeOnline() {
   return bridgeState.seenAt > 0 && Date.now() - bridgeState.seenAt < BRIDGE_FRESH_MS;
+}
+
+function bridgeSearchBlocked() {
+  if (bridgeSearchBlockedUntil <= Date.now()) {
+    bridgeSearchBlockedUntil = 0;
+    bridgeSearchLastError = "";
+    return false;
+  }
+  return true;
 }
 
 function cleanupCommands() {
@@ -202,11 +214,20 @@ function parseDirectRss(xml: string) {
   return results;
 }
 
-async function fallbackSearch(query: string, category: string) {
+async function fallbackSearch(query: string, category: string, bridgeError = "") {
   const xml = await fetchDirectRss();
   const all = parseDirectRss(xml);
   const results = all.filter((item) => queryMatches(item.title, query) && (category === "all" || item.category === category)).slice(0, LIMIT);
-  return { results, diagnostics: { mode: "direct-rss-fallback", directRssItems: all.length, bridgeOnline: bridgeOnline(), bridgeConfigured: bridgeState.configured } };
+  return {
+    results,
+    diagnostics: {
+      mode: "direct-rss-fallback",
+      directRssItems: all.length,
+      bridgeOnline: bridgeOnline(),
+      bridgeConfigured: bridgeState.configured,
+      bridgeError: bridgeError || undefined,
+    },
+  };
 }
 
 async function directTorrentFile(id: string) {
@@ -272,15 +293,18 @@ function register(app: any) {
   });
 
   app.get("/api/ncore/status", requireAdmin, (_req: any, res: any) => {
+    const blocked = bridgeSearchBlocked();
     res.json({
       enabled: ENABLED,
       configured: ENABLED,
-      ready: ENABLED && ((bridgeOnline() && bridgeState.configured) || Boolean(PASSKEY)),
-      mode: bridgeOnline() ? "wd-bridge" : PASSKEY ? "passkey-rss-fallback" : "bridge-wait",
+      ready: ENABLED && ((bridgeOnline() && bridgeState.configured && !blocked) || Boolean(PASSKEY)),
+      mode: blocked && PASSKEY ? "passkey-rss-fallback" : bridgeOnline() ? "wd-bridge" : PASSKEY ? "passkey-rss-fallback" : "bridge-wait",
       bridgeOnline: bridgeOnline(),
       bridgeConfigured: bridgeState.configured,
       bridgeVersion: bridgeState.version,
       bridgeId: bridgeState.bridgeId,
+      bridgeSearchBlocked: blocked,
+      bridgeSearchError: blocked ? bridgeSearchLastError : "",
       fallbackRss: Boolean(PASSKEY),
       categories: ["all", "movies", "tv"],
       searchLimit: LIMIT,
@@ -293,22 +317,37 @@ function register(app: any) {
     const category = ["all", "movies", "tv"].includes(String(req.query?.category || "all")) ? String(req.query?.category || "all") : "all";
     if (q.length < 2) return res.status(400).json({ error: "search_too_short" });
 
-    if (bridgeOnline() && bridgeState.configured) {
+    if (bridgeOnline() && bridgeState.configured && !bridgeSearchBlocked()) {
       try {
         const cmd = enqueue("ncore.search", { query: q, category, limit: LIMIT });
         const done = await waitForCommand(cmd.id);
         if (!done.ok) throw new Error(done.message || "ncore_bridge_search_failed");
         const parsed = JSON.parse(done.message || "{}");
+        bridgeSearchBlockedUntil = 0;
+        bridgeSearchLastError = "";
         return res.json({ ok: true, query: q, category, results: parsed.results || [], mode: "wd-bridge", bridgeVersion: parsed.bridgeVersion || bridgeState.version });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        if (message === "ncore_cloudflare") {
+          bridgeSearchBlockedUntil = Date.now() + BRIDGE_SEARCH_BLOCK_MS;
+          bridgeSearchLastError = message;
+          if (PASSKEY) {
+            try {
+              const data = await fallbackSearch(q, category, message);
+              return res.json({ ok: true, query: q, category, results: data.results, diagnostics: data.diagnostics, mode: "direct-rss-fallback" });
+            } catch (fallbackErr) {
+              const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+              return res.status(errorStatus(fallbackMessage)).json({ error: fallbackMessage, bridgeError: message });
+            }
+          }
+        }
         return res.status(errorStatus(message)).json({ error: message });
       }
     }
 
     if (PASSKEY) {
       try {
-        const data = await fallbackSearch(q, category);
+        const data = await fallbackSearch(q, category, bridgeSearchBlocked() ? bridgeSearchLastError : "");
         return res.json({ ok: true, query: q, category, results: data.results, diagnostics: data.results.length ? undefined : data.diagnostics, mode: "direct-rss-fallback" });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
