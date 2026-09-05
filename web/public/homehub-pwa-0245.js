@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "0.24.5";
+  const VERSION = "0.24.6";
   const BUILD_KEY = "homehub-build-version";
   const RELOAD_KEY = `homehub-reloaded-${VERSION}`;
 

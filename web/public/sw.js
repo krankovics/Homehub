@@ -1,4 +1,4 @@
-const VERSION = "0.24.5";
+const VERSION = "0.24.6";
 const CACHE = `homehub-v${VERSION}`;
 const CORE = ["/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
@@ -16,9 +16,6 @@ self.addEventListener("activate", (event) => {
     await Promise.all(keys.filter((key) => key.startsWith("homehub-") && key !== CACHE).map((key) => caches.delete(key)));
     await self.clients.claim();
 
-    // iOS Home Screen web apps can keep an old app shell alive for a long time.
-    // After a worker version change, navigate controlled clients once with a build
-    // marker so the document and hashed Vite assets are fetched from the network.
     const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     await Promise.all(clients.map(async (client) => {
       try {
@@ -43,8 +40,6 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
-  // Network-first prevents an installed iPhone PWA from being pinned to an old UI.
-  // The cache is only an offline fallback.
   event.respondWith((async () => {
     try {
       const response = await fetch(event.request, { cache: "no-store" });
