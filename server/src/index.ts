@@ -15,7 +15,7 @@ import { AIService, type AIActionPlan } from "./ai.js";
 import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDeviceHistory, updatePresence } from "./history.js";
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 
-const VERSION = "0.22.1";
+const VERSION = "0.22.2";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -754,9 +754,15 @@ app.post("/api/ai/automation-draft", userAuth, async (req, res) => {
       if (!validated.success) {
         result.valid = false;
         result.warnings.push("HIBA: A generált szabály nem felel meg a HomeHub szabálysémának.");
-      } else if (!automationGateSafety(validated.data)) {
-        result.valid = false;
-        result.warnings.push("HIBA: A HomeHub kapubiztonsági policy blokkolta a szabályt.");
+      } else {
+        // safeParse above guarantees the required AutomationRuleInput shape at runtime.
+        // Zod's inferred type for the recursive trigger schema is slightly wider and marks
+        // trigger optional, so narrow it only after successful validation.
+        const validatedRule = validated.data as AutomationRuleInput;
+        if (!automationGateSafety(validatedRule)) {
+          result.valid = false;
+          result.warnings.push("HIBA: A HomeHub kapubiztonsági policy blokkolta a szabályt.");
+        }
       }
     }
     res.json(result);
