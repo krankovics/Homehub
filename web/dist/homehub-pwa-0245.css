@@ -1,0 +1,29 @@
+/* HomeHub 0.24.5 PWA / Web Push UX */
+.pushGuideV245{margin-top:14px;padding-top:14px;border-top:1px solid var(--hh-line);display:grid;gap:12px}
+.pushGuideHeadV245{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.pushGuideHeadV245 h3{margin:3px 0 4px!important;font-size:17px!important}
+.pushGuideHeadV245 p{margin:0!important;max-width:760px;font-size:11px!important;color:var(--hh-muted)!important}
+.pushChecksV245{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pushCheckV245{min-width:0;display:flex;align-items:flex-start;gap:9px;padding:11px;border:1px solid var(--hh-line);border-radius:13px;background:var(--hh-paper2)}
+.pushCheckV245>i{width:23px;height:23px;min-width:23px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:900;background:var(--hh-paper);color:var(--hh-muted);border:1px solid var(--hh-line)}
+.pushCheckV245.ok>i{background:var(--hh-success-soft);color:var(--hh-success);border-color:transparent}
+.pushCheckV245.warn>i{background:var(--hh-warn-soft);color:var(--hh-warn);border-color:transparent}
+.pushCheckV245 div{min-width:0;display:grid;gap:2px}
+.pushCheckV245 b{font-size:11px;line-height:1.2}
+.pushCheckV245 span{font-size:9px;line-height:1.35;color:var(--hh-muted);overflow-wrap:anywhere}
+.pushCalloutV245{padding:10px 12px;border-radius:12px;background:var(--hh-warn-soft);color:var(--hh-warn);font-size:10px;line-height:1.45;border:1px solid color-mix(in srgb,var(--hh-warn) 20%,var(--hh-line))}
+.pushCalloutV245 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:9px}
+.pushRefreshV245{min-height:36px!important}
+
+@media(max-width:900px){.pushChecksV245{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){
+  .pushGuideV245{margin-top:12px;padding-top:12px;gap:10px}
+  .pushGuideHeadV245{display:grid;grid-template-columns:1fr;gap:9px}
+  .pushGuideHeadV245 p{font-size:12px!important;line-height:1.45!important}
+  .pushRefreshV245{width:100%;min-height:44px!important}
+  .pushChecksV245{grid-template-columns:1fr;gap:7px}
+  .pushCheckV245{padding:10px 11px;border-radius:12px}
+  .pushCheckV245 b{font-size:12px}
+  .pushCheckV245 span{font-size:10px}
+  .pushCalloutV245{font-size:11px;padding:11px 12px}
+}

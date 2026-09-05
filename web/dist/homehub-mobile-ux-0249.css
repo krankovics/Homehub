@@ -1,0 +1,104 @@
+/* HomeHub 0.24.9 global mobile UX guardrail. Loaded last. */
+:root{--hh-mobile-nav-h-249:72px;--hh-safe-top-249:env(safe-area-inset-top,0px);--hh-safe-bottom-249:env(safe-area-inset-bottom,0px)}
+html,body,#root,.hhApp,.hhMain,.tabPanel{max-width:100%;min-width:0}
+html,body{overflow-x:hidden!important}
+.hhApp :where(section,article,div,nav,header,footer,form,label){min-width:0}
+.hhApp :where(img,svg,video,canvas){max-width:100%;height:auto}
+.hhApp :where(p,small,strong,b){overflow-wrap:anywhere}
+
+/* Legacy .switch form control must never manufacture pseudo controls in device cards. */
+.hhApp article.smartDevice.switch::before,.hhApp article.smartDevice.switch::after,.hhApp article.smartDevice.switch span::before,.hhApp article.smartDevice.switch span::after{content:none!important;display:none!important}
+.hhApp article.smartDevice.switch span:not(.deviceDot):not(.smartToggleV12){width:auto!important;height:auto!important;min-width:0!important;position:static!important;background:transparent!important;border-radius:0!important;box-shadow:none!important}
+.hhApp article.smartDevice.switch .deviceDot{display:inline-block!important;width:7px!important;height:7px!important;border-radius:50%!important;background:var(--hh-muted)!important}
+.hhApp article.smartDevice.switch.online .deviceDot{background:var(--hh-accent)!important}
+.hhApp article.smartDevice.switch .smartToggleV12{display:block!important;position:relative!important;width:50px!important;min-width:50px!important;height:28px!important;border-radius:999px!important;background:color-mix(in srgb,var(--hh-muted) 36%,var(--hh-paper2))!important}
+.hhApp article.smartDevice.switch .smartToggleV12.on{background:var(--hh-accent)!important}
+
+.notificationsTabV249{display:grid;gap:12px}
+.notificationsHeroV249{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center}
+.notificationsHeroV249 h2{font-size:25px!important;margin:4px 0 5px!important}
+.notificationOverviewV249{display:grid;grid-template-columns:repeat(4,minmax(82px,1fr));gap:8px}
+.notificationOverviewV249>span{display:grid;gap:3px;padding:11px 12px;border:1px solid var(--hh-line);border-radius:13px;background:var(--hh-paper2)}
+.notificationOverviewV249 small{font-size:9px;color:var(--hh-muted);text-transform:uppercase;letter-spacing:.08em}
+.notificationOverviewV249 strong{font-size:16px}
+.notificationHistoryV249 .alertItem{min-width:0}
+.pushActionsV22{display:flex;gap:8px;flex-wrap:wrap}
+.actionStatsCompactV249{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+
+@media(max-width:760px){
+  html,body,#root{width:100%!important;max-width:100%!important;overflow-x:hidden!important;overscroll-behavior-x:none}
+  body{min-width:0!important}
+  .hhApp{width:100%!important;max-width:100vw!important;overflow-x:hidden!important;padding-bottom:calc(var(--hh-mobile-nav-h-249) + var(--hh-safe-bottom-249) + 30px)!important}
+  .hhMain{width:100%!important;max-width:100%!important;overflow-x:hidden!important;padding-left:12px!important;padding-right:12px!important;padding-bottom:calc(var(--hh-mobile-nav-h-249) + var(--hh-safe-bottom-249) + 34px)!important}
+  .hhMain>.tabPanel,.hhMain>.hhTopbar,.panel,.smartPanelV12,.smartGridV12,.smartGridV13,.peopleGridV19,.notificationsTabV249,.notificationComposerV22{width:100%!important;max-width:100%!important;min-width:0!important}
+  .tabPanel,.panel,.smartPanelV12,.smartDevice,.personCardV19,.actionRule,.alertItem{overflow-x:hidden!important}
+
+  /* Fixed nav owns its own area; content never sits underneath it. */
+  .hhSidebar{left:8px!important;right:8px!important;bottom:calc(8px + var(--hh-safe-bottom-249))!important;width:auto!important;max-width:calc(100vw - 16px)!important}
+  .hhMobileNav{grid-template-columns:repeat(5,minmax(0,1fr))!important}
+  .hhMobileNav button{min-width:0!important}
+  body:has(.modalBack) .hhSidebar,body:has(.actionModalBack) .hhSidebar,body:has(.hhAccountBackV246) .hhSidebar{display:none!important}
+  body:has(.modalBack),body:has(.actionModalBack),body:has(.hhAccountBackV246){overflow:hidden!important}
+
+  /* No iOS focus zoom. */
+  .hhApp input:not([type="checkbox"]):not([type="radio"]),.hhApp select,.hhApp textarea{font-size:16px!important;max-width:100%!important}
+
+  /* Toolbars/chips wrap instead of widening the document. */
+  .filterBar,.filterBarV12,.timelineFiltersV19,.smartHeroActionsV12,.copyActions,.personActionsV19,.ruleMetaV21,.ruleMetaV22{display:flex!important;flex-wrap:wrap!important;overflow:visible!important;max-width:100%!important}
+  .filterBar button,.filterBarV12 button,.timelineFiltersV19 button{flex:0 1 auto!important;white-space:normal!important}
+  .magnet,.add,.mediaToolbarV16,.smartSearchRowV12{max-width:100%!important}
+
+  /* Smart cards: one clear primary control, no debug/hint clutter. */
+  .smartGridV12,.smartGridV13{padding-left:0!important;padding-right:0!important}
+  .smartDevice{width:100%!important;max-width:100%!important;margin:0!important;padding:14px!important;border-radius:18px!important}
+  .smartCardTop{grid-template-columns:38px minmax(0,1fr) auto!important;gap:10px!important;align-items:center!important}
+  .smartCardTitle,.smartCardIdentity{min-width:0!important}
+  .smartCardTitle strong{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;font-size:16px!important;line-height:1.2!important}
+  .smartCardIdentity>small{white-space:normal!important}
+  .smartCardHint,.smartDeviceDebug,.miniControlStrip,.secondaryToggleRow{display:none!important}
+  .smartDevice.switch .smartCardActionsV12,.smartDevice.light .smartCardActionsV12{display:none!important}
+  .switchCardStateV12{min-height:54px!important;padding:10px 12px!important;margin-top:7px!important}
+  .sensorHeroV12{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .sensorHeroV12>span:last-child:nth-child(odd){grid-column:1/-1}
+
+  /* Modals are safe-area sheets with internal scrolling; bottom nav is hidden. */
+  .modalBack,.actionModalBack{position:fixed!important;inset:0!important;padding:calc(var(--hh-safe-top-249) + 6px) 6px calc(var(--hh-safe-bottom-249) + 6px)!important;align-items:stretch!important;justify-content:center!important;overflow:hidden!important;z-index:220!important}
+  .detailModalV12,.actionComposer,.modal{width:100%!important;max-width:100%!important;height:auto!important;max-height:calc(100dvh - var(--hh-safe-top-249) - var(--hh-safe-bottom-249) - 12px)!important;margin:0!important;border-radius:20px!important;overflow-y:auto!important;overflow-x:hidden!important;-webkit-overflow-scrolling:touch}
+  .actionComposer{padding:0!important}
+  .actionComposerHead{position:sticky!important;top:0!important;z-index:8!important;background:var(--hh-paper)!important;padding:16px 16px 12px!important;border-bottom:1px solid var(--hh-line)!important}
+  .actionComposerHead h2{font-size:25px!important;line-height:1.12!important;margin:4px 0!important;overflow-wrap:anywhere}
+  .actionTemplateGrid{grid-template-columns:1fr!important;margin:0!important;padding:12px 16px!important;gap:8px!important}
+  .actionTemplateGrid button{min-height:76px!important;padding:12px!important}
+  .actionFields,.notificationComposerV22{margin:0 16px 12px!important;padding:12px!important;width:auto!important;max-width:calc(100% - 32px)!important;grid-template-columns:1fr!important}
+  .recipientGridV22{grid-template-columns:1fr!important;gap:7px!important}
+  .recipientGridV22 label{min-width:0!important;padding:10px!important}
+  .recipientGridV22 label>span:last-child{min-width:0!important}
+  .recipientGridV22 small{white-space:normal!important}
+  .channelPickerV22{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important}
+  .channelPickerV22 label{min-width:0!important;padding:10px 6px!important}
+  .actionComposerFooter{position:sticky!important;bottom:0!important;z-index:9!important;margin:0!important;padding:12px 16px calc(12px + var(--hh-safe-bottom-249))!important;background:var(--hh-paper)!important;border-top:1px solid var(--hh-line)!important;display:grid!important;grid-template-columns:1fr 1fr!important}
+  .actionComposerFooter button{width:100%!important;min-width:0!important}
+  .detailHead{position:sticky!important;top:0!important;z-index:8!important;background:var(--hh-paper)!important}
+
+  /* Notifications hub. */
+  .notificationsHeroV249{grid-template-columns:1fr!important;gap:12px!important;padding:15px!important}
+  .notificationOverviewV249{grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important}
+  .notificationOverviewV249>span{padding:10px!important}
+  .pushActionsV22{display:grid!important;grid-template-columns:1fr!important;width:100%!important}
+  .pushActionsV22 button{width:100%!important}
+  .notificationHistoryV249 .sectionHead{align-items:stretch!important}
+  .notificationHistoryV249 .alertItem{grid-template-columns:32px minmax(0,1fr)!important;padding:11px!important}
+  .notificationHistoryV249 .alertItem p{white-space:pre-line!important}
+  .notificationHistoryV249 .alertItem small{display:block!important;line-height:1.5!important}
+
+  /* Header and feedback stay inside safe area. */
+  .hhTopbar{max-width:100vw!important;overflow:hidden!important}
+  .hhTopbar h1{min-width:0!important;max-width:34vw!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+  .hhTopActions{min-width:0!important;flex-shrink:0!important}
+  .hhMobileTabSelect{max-width:34vw!important}
+  .toast{left:12px!important;right:12px!important;top:calc(var(--hh-safe-top-249) + 8px)!important;max-width:none!important;width:auto!important;overflow-wrap:anywhere!important}
+
+  /* Editors and final rows stay clear of the floating nav. */
+  .personEditorActionsV19,.profileSaveRowV211,.accessSaveRowV211{bottom:calc(var(--hh-mobile-nav-h-249) + var(--hh-safe-bottom-249) + 10px)!important}
+  .tabPanel>*:last-child{margin-bottom:8px!important}
+}

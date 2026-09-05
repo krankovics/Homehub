@@ -16,7 +16,7 @@ import { networkEventsToHistory, pushHistory, recordHourlyNetworkSample, tuyaDev
 import { enrichNetworkIdentities, normalizeMac } from "./identity.js";
 import { Life360Service, haversineMeters } from "./life360.js";
 
-const VERSION = "0.23.0";
+const VERSION = "0.24.9";
 const isProd = process.env.NODE_ENV === "production";
 const PORT = Number(process.env.PORT || 8787);
 const APP_PASSWORD = process.env.APP_PASSWORD || (isProd ? "" : "homehub-dev");
@@ -421,6 +421,19 @@ app.delete("/api/notifications/push/subscribe", userAuth, (req, res) => {
   const endpoint = String(req.body?.endpoint || "");
   store.mutate(s => { const p = s.people.find(x => x.id === user.personId); if (p) { p.pushSubscriptions = (p.pushSubscriptions || []).filter(x => x.endpoint !== endpoint); p.updatedAt = new Date().toISOString(); } });
   res.json({ ok: true });
+});
+
+app.post("/api/notifications/push/test", userAuth, async (_req, res) => {
+  const user = res.locals.user as SessionUser;
+  if (!user.personId) return res.status(400).json({ error: "person_account_required_for_push" });
+  try {
+    const deliveries = await notifier.deliver({ enabled: true, priority: "normal", recipientPersonIds: [user.personId], channels: ["push"], fallbackToAdmin: false }, "HomeHub teszt push", "Ha ezt az értesítést látod, az iPhone Web Push működik.");
+    const ok = deliveries.some(d => d.channel === "push" && d.ok);
+    if (!ok) return res.status(502).json({ ok: false, error: "push_send_failed", deliveries });
+    res.json({ ok: true, deliveries });
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.get("/api/state", userAuth, (_req, res) => res.json(publicState(res.locals.user as SessionUser)));

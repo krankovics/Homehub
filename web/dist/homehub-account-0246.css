@@ -1,0 +1,51 @@
+.accountSettingsV246{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px 20px;align-items:center}
+.accountSettingsHeadV246{min-width:0}
+.accountSettingsHeadV246 h2{margin:3px 0 4px}
+.accountSettingsHeadV246 p{margin:0;color:var(--hh-muted)}
+.accountSettingsIdentityV246{display:flex;align-items:center;gap:11px;min-width:220px;padding:12px 14px;border:1px solid var(--hh-line);border-radius:16px;background:var(--hh-paper2)}
+.accountSettingsIdentityV246>div:last-child{display:grid;gap:2px;min-width:0}
+.accountSettingsIdentityV246 strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.accountSettingsIdentityV246 span{font-size:11px;color:var(--hh-muted)}
+.accountSettingsNoteV246{grid-column:1/-1;padding:10px 12px;border-radius:13px;background:var(--hh-accent-soft);color:var(--hh-accent-ink);font-size:12px;line-height:1.45}
+.accountSettingsNoteV246.warn{background:color-mix(in srgb,#f59e0b 11%,var(--hh-paper));color:var(--hh-text);border:1px solid color-mix(in srgb,#f59e0b 24%,var(--hh-line))}
+.accountSettingsActionsV246{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+.hhAccountAvatarV246{width:42px;height:42px;min-width:42px;border-radius:14px;display:grid;place-items:center;background:var(--hh-accent-soft);color:var(--hh-accent);font-weight:800;font-size:15px;border:1px solid color-mix(in srgb,var(--hh-accent) 12%,var(--hh-line))}
+.hhMobileAccountV246{display:none;width:38px;height:38px;min-width:38px;border:1px solid var(--hh-line);border-radius:12px;background:var(--hh-paper);color:var(--hh-text);font-weight:800;font-size:13px;box-shadow:none;padding:0}
+.hhMobileAccountV246:active{transform:scale(.97)}
+.hhAccountLogoutV246{min-height:42px;padding:0 15px;border-radius:12px;border:1px solid color-mix(in srgb,#d9485f 26%,var(--hh-line));background:color-mix(in srgb,#d9485f 8%,var(--hh-paper));color:#b92f46;font:inherit;font-weight:700;cursor:pointer}
+.hhAccountLogoutV246:disabled{opacity:.55;cursor:default}
+.hhAccountBackV246{position:fixed;inset:0;z-index:300;display:flex;align-items:flex-end;justify-content:center;padding:0;background:rgba(10,18,14,.28);backdrop-filter:blur(7px)}
+.hhAccountSheetV246{width:min(100%,520px);max-height:min(82dvh,720px);overflow:auto;padding:8px 18px calc(18px + env(safe-area-inset-bottom,0px));border:1px solid var(--hh-line);border-bottom:0;border-radius:28px 28px 0 0;background:var(--hh-paper);box-shadow:0 -18px 60px rgba(16,28,22,.18)}
+.hhAccountHandleV246{width:42px;height:4px;border-radius:999px;background:color-mix(in srgb,var(--hh-muted) 35%,transparent);margin:2px auto 14px}
+.hhAccountSheetHeadV246{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px}
+.hhAccountIdentityV246{display:grid;gap:2px;min-width:0}
+.hhAccountIdentityV246 strong{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hhAccountIdentityV246 span{font-size:12px;color:var(--hh-muted)}
+.hhAccountCloseV246{width:38px;height:38px;border:1px solid var(--hh-line);border-radius:12px;background:var(--hh-paper2);color:var(--hh-text);font-size:23px;line-height:1;padding:0}
+.hhAccountSheetBodyV246{margin:15px 0}
+.hhAccountNoteV246{display:grid;gap:4px;padding:12px 13px;border-radius:15px;border:1px solid var(--hh-line);background:var(--hh-paper2)}
+.hhAccountNoteV246 b{font-size:12px}
+.hhAccountNoteV246 span{font-size:11px;line-height:1.45;color:var(--hh-muted)}
+.hhAccountNoteV246.good{background:var(--hh-accent-soft);border-color:transparent}
+.hhAccountNoteV246.good b,.hhAccountNoteV246.good span{color:var(--hh-accent-ink)}
+.hhAccountNoteV246.warn{background:color-mix(in srgb,#f59e0b 9%,var(--hh-paper));border-color:color-mix(in srgb,#f59e0b 24%,var(--hh-line))}
+.hhAccountSheetActionsV246{display:grid;gap:9px}
+.hhAccountActionV246{min-height:58px;display:grid;grid-template-columns:34px minmax(0,1fr);grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--hh-line);border-radius:15px;background:var(--hh-paper2);color:var(--hh-text);text-align:left}
+.hhAccountActionV246>span{grid-row:1/3;width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:var(--hh-paper);font-size:16px}
+.hhAccountActionV246>b{font-size:12px;align-self:end}
+.hhAccountActionV246>small{font-size:10px;color:var(--hh-muted);align-self:start}
+.hhAccountSheetActionsV246>.hhAccountLogoutV246{width:100%;min-height:48px;margin-top:2px}
+body.hhAccountOpenV246{overflow:hidden}
+@media(max-width:760px){
+  .hhMobileAccountV246{display:grid;place-items:center!important}
+  .accountSettingsV246{grid-template-columns:1fr!important;gap:11px!important}
+  .accountSettingsIdentityV246{min-width:0;width:100%;padding:11px 12px}
+  .accountSettingsNoteV246,.accountSettingsActionsV246{grid-column:1!important}
+  .accountSettingsActionsV246{display:grid!important;grid-template-columns:1fr!important}
+  .accountSettingsActionsV246>*{width:100%!important;min-height:44px!important}
+  .hhAccountSheetV246{width:100%;max-height:86dvh;padding-left:16px;padding-right:16px}
+}
+@media(min-width:761px){
+  .hhAccountBackV246{align-items:center;padding:24px}
+  .hhAccountSheetV246{border-bottom:1px solid var(--hh-line);border-radius:24px;padding-bottom:18px}
+}

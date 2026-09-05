@@ -63,7 +63,7 @@ export class NotificationRouter {
           let sent = 0;
           for (const sub of [...subs]) {
             try {
-              await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, JSON.stringify({ title: subject, body: message, url: "/#actions", tag: `homehub-${Date.now()}` }), { TTL: 300, urgency: plan.priority === "critical" ? "high" : "normal" });
+              await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, JSON.stringify({ title: subject, body: message, url: "/#notifications", tag: `homehub-${Date.now()}` }), { TTL: 300, urgency: plan.priority === "critical" ? "high" : "normal" });
               sent++;
             } catch (err: any) {
               if (err?.statusCode === 404 || err?.statusCode === 410) {
